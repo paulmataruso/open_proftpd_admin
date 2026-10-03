@@ -96,7 +96,7 @@ def get_admin_username(db: Session) -> str:
 # ── JWT ───────────────────────────────────────────────────────────────────────
 
 ALGORITHM   = "HS256"
-TOKEN_HOURS = 8
+TOKEN_HOURS = 2
 
 
 def create_access_token(data: dict) -> str:

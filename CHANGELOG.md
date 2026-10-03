@@ -7,6 +7,30 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.1.0] — 2026-10-03
+
+### Added
+- **Trusted FTP users**: admin-provisioned read/write accounts, each chrooted to its own directory under `FTP_BASE_PATH` via a generated `ftpd_trusted.conf` (`<IfUser>` blocks), with a separate `TRUSTED_FTP_GID` and a **Fix Perms** action
+- **HTTP downloads site support**: `.htpasswd` generated from registered users (first line preserved as the shared public login), plus HTTP download tracking from the nginx log
+- **Upload tracking**: FTP `STOR`/`APPE` recorded to `user_uploads`/`anon_uploads`
+- **Archive ingestion**: rotated/compressed logs ingested once on startup, with progress shown in the new **DB Status** page
+- **Public dashboard** (`/public.html`): read-only overview with masked IPs and usernames
+- **Live Sessions**: real-time `ftpwho -v` view, fed by a host-side exporter (`ftpwho/`, systemd unit included)
+- **Security**: admin intrusion detection with warn-then-ban, IP/username bans, multi-username detection
+- Stale-while-revalidate stats cache for fast page loads
+- `SITE_NAME`, `FTP_PUBLIC_HOST`, `PUBLIC_HTTP_USERNAME`, `TRUSTED_FTP_GID`, `HTPASSWD_DIR`, `HTTP_LOG_DIR`, `FTPWHO_DIR` settings
+
+### Changed
+- Removed all deployment-specific branding, hostnames, and paths from the code. Configure them through `.env` instead.
+- Default `FTP_BASE_PATH` is now `/srv/ftp`
+
+### Upgrading from 0.0.1
+- Add the new variables from `.env.example` to your `.env`. To keep the old behaviour, set `SITE_NAME`, `FTP_PUBLIC_HOST`, and `PUBLIC_HTTP_USERNAME` to your previous values.
+- Add `Include /etc/proftpd/ftpd_trusted.conf` to `proftpd.conf` if you plan to use trusted users.
+- `docker compose up -d --build`
+
+---
+
 ## [0.0.1] — 2026-05-12
 
 Initial release.
@@ -38,7 +62,7 @@ Initial release.
 - Log retention: configurable nightly pruning with enable/disable toggle (default: 90 days, enabled)
 - Paginated download tables with filter by username, IP, filename/path, and date range
 - Top 10 files, users, and IPs shown per panel
-- Full file paths displayed throughout (prefix `/mnt/zpool0_nfs/cios_www/` stripped for readability)
+- Full file paths displayed throughout (FTP root prefix stripped for readability)
 - CSV export of user and anonymous download logs with current filters applied
 
 #### Statistics
@@ -78,4 +102,5 @@ Initial release.
 
 ---
 
-[0.0.1]: https://github.com/yourusername/ciosuseradd/releases/tag/v0.0.1
+[0.1.0]: https://github.com/paulmataruso/pftpuseradd/releases/tag/v0.1.0
+[0.0.1]: https://github.com/paulmataruso/pftpuseradd/releases/tag/v0.0.1

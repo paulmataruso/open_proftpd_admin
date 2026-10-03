@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Public Overview</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<script src="/static/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg:       #080a0f;
+  --bg2:      #0e1118;
+  --bg3:      #141820;
+  --border:   #232836;
+  --border2:  #2e3447;
+  --accent:   #3b82f6;
+  --accent-h: #60a5fa;
+  --green:    #10b981;
+  --red:      #ef4444;
+  --text:     #e2e8f0;
+  --text2:    #94a3b8;
+  --text3:    #64748b;
+  --mono:     'JetBrains Mono', monospace;
+  --sans:     'Inter', sans-serif;
+  --radius:   6px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+
+.pub-wrap { padding: 1.5rem 2rem; }
+
+.pub-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.pub-header .logo-icon { width: 32px; height: 32px; border-radius: 7px; overflow: hidden; display: flex; }
+.pub-header h1 { font-size: 1.15rem; font-weight: 600; letter-spacing: -0.01em; }
+.pub-updated { margin-left: auto; font-size: 0.72rem; color: var(--text3); }
+
+.alert { padding: 0.75rem 1rem; border-radius: var(--radius); font-size: 0.8rem; margin-bottom: 1.5rem; line-height: 1.5; }
+.alert.info { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25); color: var(--accent-h); }
+
+.section-label { font-size: 0.78rem; color: var(--text3); }
+
+.stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.25rem; }
+.stat-card .stat-label { font-size: 0.72rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.4rem; }
+.stat-card .stat-val   { font-family: var(--mono); font-size: 1.8rem; font-weight: 700; line-height: 1; white-space: nowrap; overflow: hidden; }
+.stat-card .stat-trend { font-size: 0.72rem; margin-top: 0.3rem; }
+.trend-up   { color: var(--green); }
+.trend-down { color: var(--red); }
+.trend-flat { color: var(--text3); }
+
+.chart-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
+.chart-card h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.chart-wrap { position: relative; height: 220px; }
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.chart-grid .chart-card { margin-bottom: 0; }
+@media (max-width: 760px) { .chart-grid { grid-template-columns: 1fr; } }
+
+.table-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; }
+.table-wrap { overflow-x: auto; }
+.table-card table { width: 100%; border-collapse: collapse; }
+.table-card thead th { padding: 0.6rem 1rem; text-align: left; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); border-bottom: 1px solid var(--border); white-space: nowrap; font-weight: 500; }
+.table-card tbody td { padding: 0.7rem 1rem; border-bottom: 1px solid var(--border); vertical-align: middle; font-family: var(--mono); font-size: 0.8rem; }
+.table-card tbody tr:last-child td { border-bottom: none; }
+.table-card .empty { text-align: center; padding: 2rem 1rem; color: var(--text3); font-size: 0.85rem; font-family: var(--sans); }
+
+.detail-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; }
+.detail-card h3 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text3); margin-bottom: 1rem; }
+.top-list { list-style: none; }
+.top-list li { display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid var(--border); font-size: 0.8rem; flex-wrap: wrap; gap: 0.2rem; }
+.top-list li:last-child { border-bottom: none; }
+.top-list .top-name  { font-family: var(--mono); font-size: 0.75rem; color: var(--text2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 0.5rem; }
+.top-list .top-count { font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
+
+.range-tabs { display: flex; gap: 0.3rem; }
+.range-tab { padding: 0.2rem 0.55rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; cursor: pointer; border: 1px solid var(--border2); background: transparent; color: var(--text3); transition: all 0.12s; }
+.range-tab.active { background: rgba(59,130,246,0.15); border-color: var(--accent); color: var(--accent-h); }
+.range-tab:hover:not(.active) { border-color: var(--text3); color: var(--text2); }
+
+.sort-toggle-group { display: inline-flex; gap: 0.2rem; margin-left: 0.5rem; }
+.sort-tab { padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.62rem; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border2); background: transparent; color: var(--text3);
+  transition: all 0.12s; text-transform: uppercase; letter-spacing: 0.05em; }
+.sort-tab.active { background: rgba(59,130,246,0.15); border-color: var(--accent); color: var(--accent-h); }
+.sort-tab:hover:not(.active) { border-color: var(--text3); color: var(--text2); }
+
+.pub-footer { margin-top: 1.5rem; text-align: center; font-size: 0.72rem; color: var(--text3); }
+</style>
+</head>
+<body>
+<div class="pub-wrap">
+
+  <div class="pub-header">
+    <div class="logo-icon"><img src="/static/favicon.png" width="32" height="32" alt=""></div>
+    <h1><span data-site="name"></span> Public Overview</h1>
+    <span class="pub-updated" id="pub-updated"></span>
+  </div>
+  <div class="alert info">🔒 This is a public, read-only snapshot. IP addresses are masked to their first two octets and usernames show only their first and last character.</div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+    <span class="section-label">By source</span>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">FTP Downloads</div><div class="stat-val" id="src-ftp-dl">—</div><div class="stat-trend" id="src-ftp-dl-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">FTP Data Out</div><div class="stat-val" style="font-size:1.3rem" id="src-ftp-bytes">—</div><div class="stat-trend" id="src-ftp-bytes-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">HTTP Downloads</div><div class="stat-val" id="src-http-dl">—</div><div class="stat-trend" id="src-http-dl-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">HTTP Data Out</div><div class="stat-val" style="font-size:1.3rem" id="src-http-bytes">—</div><div class="stat-trend" id="src-http-bytes-trend"></div></div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:1.25rem 0 0.5rem">
+    <span class="section-label">System snapshot</span>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-val" id="sys-users">—</div></div>
+    <div class="stat-card"><div class="stat-label">Active Users</div><div class="stat-val" style="color:var(--green)" id="sys-active">—</div></div>
+    <div class="stat-card"><div class="stat-label">Trusted FTP</div><div class="stat-val" style="color:#14b8a6" id="sys-trusted">—</div></div>
+    <div class="stat-card"><div class="stat-label">Database Size</div><div class="stat-val" id="sys-dbsize">—</div></div>
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin:1.25rem 0 1rem">
+    <span class="section-label">Combined FTP + HTTP activity</span>
+    <div class="range-tabs">
+      <button class="range-tab" data-days="1" onclick="setRange(1)">24h</button>
+      <button class="range-tab" data-days="7" onclick="setRange(7)">7d</button>
+      <button class="range-tab active" data-days="30" onclick="setRange(30)">30d</button>
+      <button class="range-tab" data-days="90" onclick="setRange(90)">90d</button>
+      <button class="range-tab" data-days="365" onclick="setRange(365)">1y</button>
+      <button class="range-tab" data-days="max" onclick="setRange('max')">Max</button>
+    </div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Registered Users Downloads</div><div class="stat-val" id="named-dl">—</div><div class="stat-trend" id="named-dl-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">Registered User Data Out</div><div class="stat-val" style="font-size:1.3rem" id="named-bytes">—</div><div class="stat-trend" id="named-bytes-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">Anon Downloads</div><div class="stat-val" id="anon-dl">—</div><div class="stat-trend" id="anon-dl-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">Anon Data Out</div><div class="stat-val" style="font-size:1.3rem" id="anon-bytes">—</div><div class="stat-trend" id="anon-bytes-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">Total Downloads</div><div class="stat-val" id="total-dl">—</div><div class="stat-trend" id="total-dl-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">Total Data Out</div><div class="stat-val" style="font-size:1.3rem" id="total-bytes">—</div><div class="stat-trend" id="total-bytes-trend"></div></div>
+    <div class="stat-card"><div class="stat-label">Avg Downloads / Day</div><div class="stat-val" id="avg-dl">—</div></div>
+    <div class="stat-card"><div class="stat-label">Avg Data / Day</div><div class="stat-val" style="font-size:1.3rem" id="avg-bytes">—</div></div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Downloads Over Time — Registered <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-size:0.75rem" id="range-label">last 30 days</span></h3>
+      <div class="chart-wrap"><canvas id="chart-timeline-user"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Downloads Over Time — Anonymous</h3>
+      <div class="chart-wrap"><canvas id="chart-timeline-anon"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>Data Transferred Over Time — Registered</h3>
+      <div class="chart-wrap"><canvas id="chart-bytes-user"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>Data Transferred Over Time — Anonymous</h3>
+      <div class="chart-wrap"><canvas id="chart-bytes-anon"></canvas></div>
+    </div>
+  </div>
+  <div class="chart-card">
+    <h3>Top Users <span class="sort-toggle-group">
+      <button class="sort-tab active" id="users-sort-dl" onclick="setUserSort('downloads')">By Count</button>
+      <button class="sort-tab" id="users-sort-bytes" onclick="setUserSort('bytes')">By Size</button>
+    </span></h3>
+    <div class="chart-wrap"><canvas id="chart-users"></canvas></div>
+  </div>
+  <div class="table-card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Username</th><th>Downloads</th><th>Data Out</th></tr></thead>
+        <tbody id="top-users-tbody"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="chart-card">
+    <h3>Top Files (by downloads)</h3>
+    <div class="chart-wrap"><canvas id="chart-files"></canvas></div>
+  </div>
+  <div class="table-card">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>File</th><th>Downloads</th><th>Data Out</th></tr></thead>
+        <tbody id="top-files-tbody"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+  <div class="detail-card"><h3>Top IPs</h3><ul class="top-list" id="top-ips"></ul></div>
+
+  <div class="pub-footer">Refreshes automatically every 60 seconds.</div>
+</div>
+
+<script>
+const API = '/api';
+
+// Branding + FTP base path from the backend (.env SITE_NAME / FTP_BASE_PATH)
+let SITE = { site_name: '', ftp_base_path: '' };
+const siteReady = fetch(API + '/public/site', { cache: 'no-store' })
+  .then(r => r.ok ? r.json() : null)
+  .then(d => {
+    if (!d) return;
+    SITE = Object.assign(SITE, d);
+    document.title = SITE.site_name + ' Public Overview';
+    document.querySelectorAll('[data-site="name"]').forEach(el => el.textContent = SITE.site_name);
+  })
+  .catch(() => {});
+let pubDays = 30;
+let pubUserSort = 'downloads';
+const pubCharts = {};
+
+async function pub(path) {
+  const res = await fetch(API + path, { cache: 'no-store' });
+  return { ok: res.ok, data: await res.json() };
+}
+
+function _setText(id, val) { const el = document.getElementById(id); if (el) { el.textContent = val; _fitStatVal(el); } }
+
+function _fitStatVal(el) {
+  if (!el || !el.classList.contains('stat-val')) return;
+  const base = el.dataset.baseFontSize || (el.dataset.baseFontSize = getComputedStyle(el).fontSize);
+  let size = parseFloat(base);
+  const min = size * 0.55;
+  el.style.fontSize = size + 'px';
+  while (el.clientWidth && el.scrollWidth > el.clientWidth + 1 && size > min) {
+    size -= 1;
+    el.style.fontSize = size + 'px';
+  }
+}
+
+function _setStatCard(valId, trendId, metric, isBytes) {
+  const el = document.getElementById(valId);
+  const tel = document.getElementById(trendId);
+  if (!el || !metric) return;
+  el.textContent = isBytes ? fmtBytes(metric.current) : fmtNum(metric.current);
+  _fitStatVal(el);
+  if (!tel) return;
+  if (metric.change === null || metric.change === undefined) { tel.textContent='No prior data'; tel.className='stat-trend trend-flat'; return; }
+  const arrow = metric.change>0?'↑':metric.change<0?'↓':'→';
+  const cls   = metric.change>0?'trend-up':metric.change<0?'trend-down':'trend-flat';
+  tel.textContent = `${arrow} ${metric.change>0?'+':''}${metric.change}% vs prior period`;
+  tel.className = 'stat-trend '+cls;
+}
+
+function fmtBytes(b) {
+  if (b==null||b===0) return '0 B';
+  const u=['B','KB','MB','GB','TB']; let i=0,v=b;
+  while (v>=1024&&i<u.length-1){v/=1024;i++;}
+  return v.toFixed(i===0?0:1)+' '+u[i];
+}
+function fmtNum(n) { return n==null?'—':n.toLocaleString(); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function stripFtpPath(p) {
+  if (!p) return '—';
+  const base = SITE.ftp_base_path ? SITE.ftp_base_path + '/' : '';
+  return base && p.startsWith(base) ? p.slice(base.length) : p;
+}
+
+function chartOptions(yLabel) {
+  return {
+    responsive:true, maintainAspectRatio:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{
+      legend:{position:'top',labels:{color:'#94a3b8',boxWidth:12,padding:16}},
+      tooltip:{backgroundColor:'#0e1118',borderColor:'#232836',borderWidth:1,titleColor:'#e2e8f0',bodyColor:'#94a3b8',padding:10},
+    },
+    scales:{
+      x:{grid:{color:'#1a1f2e'},ticks:{color:'#64748b',maxTicksLimit:10}},
+      y:{grid:{color:'#1a1f2e'},ticks:{color:'#64748b'}},
+    },
+  };
+}
+
+function _freshCtx(canvasId) {
+  const old = document.getElementById(canvasId);
+  if (!old) return null;
+  const canvas = document.createElement('canvas');
+  canvas.id = canvasId;
+  old.parentNode.replaceChild(canvas, old);
+  return canvas.getContext('2d');
+}
+
+function _mergeTimelines(userTl, anonTl, bucket, days) {
+  const kw = bucket === 'hour' ? 13 : 10;
+  const um = {}, am = {};
+  userTl.forEach(r => { um[(r.bucket||'').slice(0, kw)] = r; });
+  anonTl.forEach(r => { am[(r.bucket||'').slice(0, kw)] = r; });
+
+  const now = new Date();
+  const points = [];
+  if (bucket === 'hour') {
+    now.setUTCMinutes(0, 0, 0);
+    for (let i = days * 24 - 1; i >= 0; i--) points.push(new Date(now.getTime() - i * 3600000).toISOString().slice(0, 13));
+  } else {
+    now.setUTCHours(0, 0, 0, 0);
+    for (let i = days - 1; i >= 0; i--) points.push(new Date(now.getTime() - i * 86400000).toISOString().slice(0, 10));
+  }
+  const fmtPoint = bucket === 'hour'
+    ? p => new Date(p + ':00:00Z').toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})
+    : p => new Date(p + 'T12:00:00Z').toLocaleDateString([], {month:'short', day:'numeric'});
+
+  return {
+    labels: points.map(fmtPoint),
+    userDl: points.map(p => um[p]?.downloads || 0),
+    anonDl: points.map(p => am[p]?.downloads || 0),
+    userBytes: points.map(p => um[p]?.bytes || 0),
+    anonBytes: points.map(p => am[p]?.bytes || 0),
+  };
+}
+
+// One single-series line chart per canvas. Registered and anonymous activity
+// each get their own chart (and y-axis) so the high anon volume no longer
+// flattens the registered line.
+function _renderPubLine(key, canvasId, labels, data, opts) {
+  if (pubCharts[key]) { pubCharts[key].destroy(); pubCharts[key] = null; }
+  const ctx = _freshCtx(canvasId);
+  if (!ctx) return;
+  const base = chartOptions(opts.yLabel);
+  pubCharts[key] = new Chart(ctx, {
+    type:'line',
+    data:{labels,datasets:[
+      {label:opts.label,data,borderColor:opts.color,backgroundColor:opts.bg,tension:0.3,pointRadius:opts.pointRadius,fill:true},
+    ]},
+    options:{
+      ...base,
+      plugins:{...base.plugins, legend:{display:false}},
+      scales:opts.yTickCb
+        ? {...base.scales, y:{...base.scales.y, ticks:{callback:opts.yTickCb, color:'#64748b'}}}
+        : base.scales,
+    },
+  });
+}
+
+function renderTimelineCharts(userTl, anonTl, bucket, days) {
+  const {labels,userDl,anonDl,userBytes,anonBytes} = _mergeTimelines(userTl, anonTl, bucket, days);
+  const pr = days>90?0:2;
+  const toMB = b => +(b/1048576).toFixed(2);
+  const mbTick = v => v.toFixed(1)+' MB';
+  _renderPubLine('tlUser','chart-timeline-user',labels,userDl,{yLabel:'Downloads',label:'Registered Users',color:'#3b82f6',bg:'rgba(59,130,246,0.12)',pointRadius:pr});
+  _renderPubLine('tlAnon','chart-timeline-anon',labels,anonDl,{yLabel:'Downloads',label:'Anonymous',color:'#8b5cf6',bg:'rgba(139,92,246,0.12)',pointRadius:pr});
+  _renderPubLine('bytesUser','chart-bytes-user',labels,userBytes.map(toMB),{yLabel:'MB',label:'Registered Users',color:'#3b82f6',bg:'rgba(59,130,246,0.12)',pointRadius:pr,yTickCb:mbTick});
+  _renderPubLine('bytesAnon','chart-bytes-anon',labels,anonBytes.map(toMB),{yLabel:'MB',label:'Anonymous',color:'#8b5cf6',bg:'rgba(139,92,246,0.12)',pointRadius:pr,yTickCb:mbTick});
+}
+
+function renderTopFilesTable(topFiles) {
+  const tbody = document.getElementById('top-files-tbody');
+  if (!tbody) return;
+  if (!topFiles?.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">No data</td></tr>'; return; }
+  tbody.innerHTML = topFiles.map(f => {
+    const full = f.filepath || f.filename || '';
+    return `<tr><td title="${esc(full)}">${esc(stripFtpPath(full))}</td><td>${fmtNum(f.downloads)}</td><td>${fmtBytes(f.bytes||0)}</td></tr>`;
+  }).join('');
+}
+
+function renderTopUsersTable(breakdown) {
+  const tbody = document.getElementById('top-users-tbody');
+  if (!tbody) return;
+  if (!breakdown?.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">No data</td></tr>'; return; }
+  tbody.innerHTML = breakdown.map(r =>
+    `<tr><td>${esc(r.username)}</td><td>${fmtNum(r.downloads)}</td><td>${fmtBytes(r.bytes||0)}</td></tr>`
+  ).join('');
+}
+
+function renderTopFiles(topFiles) {
+  renderTopFilesTable(topFiles);
+  if (!topFiles?.length) return;
+  if (pubCharts.files) { pubCharts.files.destroy(); pubCharts.files = null; }
+  const ctx = _freshCtx('chart-files');
+  if (!ctx) return;
+  const labels = topFiles.slice(0,10).map(f=>{ const p=stripFtpPath(f.filepath||f.filename); return p.length>35?'…'+p.slice(-35):p; });
+  pubCharts.files = new Chart(ctx, {
+    type:'bar',
+    data:{labels,datasets:[{label:'Downloads',data:topFiles.slice(0,10).map(f=>f.downloads),backgroundColor:'rgba(20,184,166,0.5)',borderColor:'#14b8a6',borderWidth:1}]},
+    options:{...chartOptions('Downloads'),indexAxis:'y',
+      plugins:{legend:{display:false},tooltip:{callbacks:{title:items=>stripFtpPath(topFiles[items[0].dataIndex]?.filepath||topFiles[items[0].dataIndex]?.filename||'')}}}},
+  });
+}
+
+function renderTopUsers(breakdown) {
+  renderTopUsersTable(breakdown);
+  if (!breakdown?.length) return;
+  if (pubCharts.users) { pubCharts.users.destroy(); pubCharts.users = null; }
+  const ctx = _freshCtx('chart-users');
+  if (!ctx) return;
+  const isByBytes = pubUserSort==='bytes';
+  const labels = breakdown.slice(0,15).map(r=>r.username);
+  const data   = isByBytes ? breakdown.slice(0,15).map(r=>(r.bytes||0)/1048576) : breakdown.slice(0,15).map(r=>r.downloads);
+  const yLabel = isByBytes ? 'MB' : 'Downloads';
+  pubCharts.users = new Chart(ctx, {
+    type:'bar',
+    data:{labels,datasets:[{label:yLabel,data,backgroundColor:'rgba(59,130,246,0.5)',borderColor:'#3b82f6',borderWidth:1}]},
+    options:{
+      ...chartOptions(yLabel),indexAxis:'y',
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:items=>isByBytes?`${items.formattedValue} MB (${fmtNum(breakdown[items.dataIndex]?.downloads)} dl)`:`${items.formattedValue} downloads (${fmtBytes(breakdown[items.dataIndex]?.bytes||0)})`}}},
+      scales:{...chartOptions(yLabel).scales,x:{...chartOptions(yLabel).scales.x,ticks:{callback:v=>isByBytes?v.toFixed(0)+' MB':v,color:'#64748b'}}},
+    },
+  });
+}
+
+function renderTopList(elId, items, nameKey, showBytes) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || !items.length) { el.innerHTML='<li style="color:var(--text3);font-size:0.8rem">No data</li>'; return; }
+  el.innerHTML = items.map(item=>{
+    const raw = item[nameKey] || '';
+    const countPart = showBytes
+      ? `<span class="top-count">${fmtBytes(item.bytes||0)}</span>`
+      : `<span class="top-count">${fmtNum(item.downloads)}</span>`;
+    const subPart = showBytes
+      ? `<span style="font-size:0.65rem;color:var(--text3);margin-left:0.25rem">${fmtNum(item.downloads)} dl</span>`
+      : (item.bytes!=null?`<span style="font-size:0.65rem;color:var(--text3);margin-left:0.25rem">${fmtBytes(item.bytes)}</span>`:'');
+    return `<li><span class="top-name" title="${esc(raw)}">${esc(raw)}</span><span style="display:flex;align-items:center;gap:0.25rem;flex-shrink:0">${countPart}${subPart}</span></li>`;
+  }).join('');
+}
+
+let pubMaxDays = null;
+
+async function loadMaxDays() {
+  try {
+    const { ok, data } = await pub('/public/overview/earliest');
+    if (ok) pubMaxDays = data.days;
+  } catch(e) {}
+}
+
+function setRange(days) {
+  if (days === 'max') days = pubMaxDays || 3650;
+  pubDays = days;
+  document.querySelectorAll('.range-tab').forEach(t => {
+    const active = t.dataset.days === 'max' ? days === pubMaxDays : +t.dataset.days === days;
+    t.classList.toggle('active', active);
+  });
+  document.getElementById('range-label').textContent = days === pubMaxDays ? 'all available history'
+    : ({1:'last 24 hours',7:'last 7 days',30:'last 30 days',90:'last 90 days',365:'last 12 months'})[days] || `last ${days} days`;
+  loadActivity();
+}
+
+function setUserSort(sort) {
+  pubUserSort = sort;
+  document.getElementById('users-sort-dl').classList.toggle('active', sort==='downloads');
+  document.getElementById('users-sort-bytes').classList.toggle('active', sort==='bytes');
+  loadTopUsers();
+}
+
+async function loadSourceSplit() {
+  const [ftpRes, httpRes] = await Promise.allSettled([
+    pub(`/public/overview/summary?days=${pubDays}&source=ftp`),
+    pub(`/public/overview/summary?days=${pubDays}&source=http`),
+  ]);
+  const _pct = (c, p) => p ? Math.round(((c-p)/p)*1000)/10 : null;
+  const combine = (res) => {
+    if (res.status !== 'fulfilled' || !res.value.ok) return null;
+    const s = res.value.data;
+    const dlC = (s.user_downloads.current||0)  + (s.anon_downloads.current||0);
+    const dlP = (s.user_downloads.previous||0) + (s.anon_downloads.previous||0);
+    const bC  = (s.user_bytes.current||0)      + (s.anon_bytes.current||0);
+    const bP  = (s.user_bytes.previous||0)     + (s.anon_bytes.previous||0);
+    return { dl: {current:dlC, previous:dlP, change:_pct(dlC,dlP)}, bytes: {current:bC, previous:bP, change:_pct(bC,bP)} };
+  };
+  const ftp = combine(ftpRes), http = combine(httpRes);
+  if (ftp)  { _setStatCard('src-ftp-dl',  'src-ftp-dl-trend',  ftp.dl,  false); _setStatCard('src-ftp-bytes',  'src-ftp-bytes-trend',  ftp.bytes,  true); }
+  if (http) { _setStatCard('src-http-dl', 'src-http-dl-trend', http.dl, false); _setStatCard('src-http-bytes', 'src-http-bytes-trend', http.bytes, true); }
+}
+
+async function loadSnapshot() {
+  try {
+    const { ok, data } = await pub('/public/overview/snapshot');
+    if (ok) {
+      _setText('sys-users',   fmtNum(data.total));
+      _setText('sys-active',  fmtNum(data.enabled));
+      _setText('sys-trusted', data.trusted_total ?? '—');
+      _setText('sys-dbsize',  fmtBytes(data.db_bytes || 0));
+    }
+  } catch(e) {}
+}
+
+async function loadActivity() {
+  const bucket = pubDays <= 1 ? 'hour' : 'day';
+  const [summaryRes, userTlRes, anonTlRes] = await Promise.allSettled([
+    pub(`/public/overview/summary?days=${pubDays}`),
+    pub(`/public/overview/users/timeline?days=${pubDays}&bucket=${bucket}`),
+    pub(`/public/overview/anon/timeline?days=${pubDays}&bucket=${bucket}`),
+  ]);
+  if (summaryRes.status==='fulfilled' && summaryRes.value.ok) {
+    const s = summaryRes.value.data;
+    _setStatCard('named-dl',    'named-dl-trend',    s.user_downloads, false);
+    _setStatCard('named-bytes', 'named-bytes-trend', s.user_bytes,     true);
+    _setStatCard('anon-dl',     'anon-dl-trend',     s.anon_downloads, false);
+    _setStatCard('anon-bytes',  'anon-bytes-trend',  s.anon_bytes,     true);
+    const _pct = (c, p) => p ? Math.round(((c-p)/p)*1000)/10 : null;
+    const tdlC = (s.user_downloads.current||0)+(s.anon_downloads.current||0);
+    const tdlP = (s.user_downloads.previous||0)+(s.anon_downloads.previous||0);
+    const tbC  = (s.user_bytes.current||0)+(s.anon_bytes.current||0);
+    const tbP  = (s.user_bytes.previous||0)+(s.anon_bytes.previous||0);
+    _setStatCard('total-dl',    'total-dl-trend',    {current:tdlC,previous:tdlP,change:_pct(tdlC,tdlP)}, false);
+    _setStatCard('total-bytes', 'total-bytes-trend', {current:tbC, previous:tbP, change:_pct(tbC,tbP)},  true);
+    _setText('avg-dl',    fmtNum(Math.round(tdlC / pubDays)));
+    _setText('avg-bytes', fmtBytes(Math.round(tbC / pubDays)));
+  }
+  if (userTlRes.status==='fulfilled' && anonTlRes.status==='fulfilled') {
+    const userTl = userTlRes.value.ok ? userTlRes.value.data : [];
+    const anonTl = anonTlRes.value.ok ? anonTlRes.value.data : [];
+    renderTimelineCharts(userTl, anonTl, bucket, pubDays);
+  }
+}
+
+async function loadTopFilesAndIps() {
+  try {
+    const { ok, data } = await pub('/public/overview/top-stats');
+    if (!ok) return;
+    renderTopFiles(data.top_files);
+    renderTopList('top-ips', data.top_ips, 'ip_address', false);
+  } catch(e) {}
+}
+
+async function loadTopUsers() {
+  try {
+    const { ok, data } = await pub(`/public/overview/users/breakdown?days=${pubDays}&sort_by=${pubUserSort}`);
+    if (ok) renderTopUsers(data);
+  } catch(e) {}
+}
+
+function loadAll() {
+  loadSourceSplit();
+  loadSnapshot();
+  loadActivity();
+  loadTopFilesAndIps();
+  loadTopUsers();
+  document.getElementById('pub-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+siteReady.then(() => { loadMaxDays(); loadAll(); });
+setInterval(loadAll, 60000);
+</script>
+</body>
+</html>

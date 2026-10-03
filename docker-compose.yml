@@ -53,12 +53,22 @@ services:
       SECRET_KEY:          ${SECRET_KEY}
       ADMIN_USERNAME:      ${ADMIN_USERNAME}
       ADMIN_PASSWORD:      ${ADMIN_PASSWORD}
-      FTPD_PASSWD_PATH:    /ftpshared/ftpd.passwd
-      FTP_UID:             ${FTP_UID}
-      FTP_GID:             ${FTP_GID}
-      ALLOWED_ORIGINS_STR: ${ALLOWED_ORIGINS}
+      FTPD_PASSWD_PATH:        /ftpshared/ftpd.passwd
+      FTPD_TRUSTED_CONF_PATH:  /ftpshared/ftpd_trusted.conf
+      FTP_BASE_PATH:           ${FTP_BASE_PATH:-/srv/ftp}
+      HTPASSWD_PATH:           /httpshared/.htpasswd
+      FTP_UID:                 ${FTP_UID}
+      FTP_GID:                 ${FTP_GID}
+      TRUSTED_FTP_GID:         ${TRUSTED_FTP_GID}
+      ALLOWED_ORIGINS_STR:     ${ALLOWED_ORIGINS}
+      SITE_NAME:               ${SITE_NAME:-FTP User Manager}
+      FTP_PUBLIC_HOST:         ${FTP_PUBLIC_HOST:-}
+      PUBLIC_HTTP_USERNAME:    ${PUBLIC_HTTP_USERNAME:-public}
     volumes:
-      - ftpshared:/ftpshared
+      - ftpshared:/ftpshared              # ProFTPd virtual user passwd file
+      - httpshared:/httpshared            # nginx .htpasswd file
+      - ${FTP_BASE_PATH:-/srv/ftp}:/ftpbase  # fix-permissions endpoint
+      - ${FTPWHO_DIR:-/var/lib/ciosuseradd/ftpwho}:/ftpwho:ro  # host ftpwho exporter snapshot
     depends_on:
       db:
         condition: service_healthy
@@ -98,16 +108,19 @@ services:
     container_name: ciosuseradd_logtailer
     restart: unless-stopped
     environment:
-      FTP_LOG_DIR:       /logs                          # directory, not a single file
-      LOGS_DATABASE_URL: postgresql://${LOGS_POSTGRES_USER}:${LOGS_POSTGRES_PASSWORD}@db_logs:5432/${LOGS_POSTGRES_DB}
-      POLL_INTERVAL:     "1"
-      REOPEN_INTERVAL:   "60"
+      FTP_LOG_DIR:          /logs/ftp        # ProFTPd log directory
+      HTTP_LOG_DIR:         /logs/http       # nginx log directory
+      FTP_POS_PATH:         /pos/ftp.pos
+      HTTP_POS_PATH:        /pos/http.pos
+      LOGS_DATABASE_URL:    postgresql://${LOGS_POSTGRES_USER}:${LOGS_POSTGRES_PASSWORD}@db_logs:5432/${LOGS_POSTGRES_DB}
+      POLL_INTERVAL:        "1"
+      REOPEN_INTERVAL:      "60"
       CONFIG_POLL_INTERVAL: "10"
-      BATCH_SIZE:        "100"
-      POS_PATH:          /pos/tailer.pos
+      BATCH_SIZE:           "100"
     volumes:
-      - ${FTP_LOG_DIR}:/logs:ro     # entire ProFTPd log directory, read-only
-      - tailer_pos:/pos             # persist file position across restarts
+      - ${FTP_LOG_DIR}:/logs/ftp:ro      # ProFTPd log directory, read-only
+      - ${HTTP_LOG_DIR}:/logs/http:ro    # nginx log directory, read-only
+      - tailer_pos:/pos                  # persist file positions across restarts
     depends_on:
       db_logs:
         condition: service_healthy
@@ -124,6 +137,12 @@ volumes:
       type: none
       o: bind
       device: ${FTPD_PASSWD_DIR}
+  httpshared:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HTPASSWD_DIR}
 
 networks:
   internal:

@@ -1,0 +1,30 @@
+# Host-side ftpwho exporter for ciosuseradd's "Live Sessions" admin panel.
+#
+# Install (on the ProFTPd host, as root):
+#   cp ftpwho/ftpwho-export.py /usr/local/sbin/ciosuseradd-ftpwho-export
+#   chmod 755 /usr/local/sbin/ciosuseradd-ftpwho-export
+#   cp ftpwho/ciosuseradd-ftpwho.service /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now ciosuseradd-ftpwho
+#
+# FTPWHO_DIR must match FTPWHO_DIR in .env (bind-mounted into backend).
+
+[Unit]
+Description=ciosuseradd ftpwho exporter (ProFTPd live sessions -> JSON)
+After=proftpd.service
+
+[Service]
+Type=simple
+Environment=FTPWHO_DIR=/var/lib/ciosuseradd/ftpwho
+Environment=FTPWHO_INTERVAL=1
+ExecStart=/usr/bin/python3 /usr/local/sbin/ciosuseradd-ftpwho-export
+Restart=always
+RestartSec=5
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/ciosuseradd
+
+[Install]
+WantedBy=multi-user.target

@@ -31,6 +31,8 @@ Thumbs.db
 
 # Generated at runtime — contain hashed passwords, do not commit
 ftpd.passwd
+ftpd_trusted.conf
+.htpasswd
 *.passwd.tmp
 
 # Local config overrides
