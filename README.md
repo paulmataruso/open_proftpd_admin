@@ -101,8 +101,8 @@ One small component runs **on the host** instead of in compose: the `ftpwho` exp
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/paulmataruso/pftpuseradd.git
-cd pftpuseradd
+git clone https://github.com/paulmataruso/open_proftpd_admin.git
+cd open_proftpd_admin
 ```
 
 ### 2. Configure the environment
