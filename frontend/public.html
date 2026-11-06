@@ -59,7 +59,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .chart-wrap { position: relative; height: 220px; }
 .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
 .chart-grid .chart-card { margin-bottom: 0; }
-.chart-grid > div > .chart-card { height: 100%; }
 @media (max-width: 760px) { .chart-grid { grid-template-columns: 1fr; } }
 
 .table-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; }
@@ -202,13 +201,14 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
   <div class="detail-card"><h3>Top IPs <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-size:0.75rem" class="range-label">last month</span></h3><ul class="top-list" id="top-ips"></ul></div>
 
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin:1.5rem 0 1rem">
-    <span class="section-label">Busiest times — average downloads per hour, in your local time (own time range)</span>
+    <span class="section-label">Busiest times — average downloads and uploads per hour, in your local time (own time range)</span>
     <div id="heat-range"></div>
   </div>
-  <div class="chart-grid">
-    <div id="heat-ftp-map"></div>
-    <div id="heat-http-map"></div>
-  </div>
+  <div id="heat-ftp-map"></div>
+  <div id="heat-ftp-up-map"></div>
+  <div id="heat-ftp-best"></div>
+  <div id="heat-http-map"></div>
+  <div id="heat-http-best"></div>
 
   <div class="pub-footer">Refreshes automatically every <span id="pub-refresh">60</span> seconds.</div>
 </div>
@@ -625,11 +625,23 @@ function loadWindowed() {
   document.getElementById('pub-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 
-// Busiest-times heatmaps (static/heatmap.js): own range picker, independent of
-// the page's time range; aggregate counts only. Refreshed every 5 min unless a
-// custom (fixed) range is showing.
-const heatMaps = ['ftp', 'http'].map(source => HeatmapUI.createMap(document.getElementById(`heat-${source}-map`),
-  { label: source.toUpperCase(), source, path: '/public/overview/heatmap', fetchJson: pub }));
+// Busiest-times heatmaps + best/worst tables (static/heatmap.js): own range
+// picker, independent of the page's time range; aggregate counts only (the
+// public uploads series leaves out private users). Refreshed every 5 min
+// unless a custom (fixed) range is showing.
+const heatBest = {};
+function _heatMap(id, source, kind, noun) {
+  return HeatmapUI.createMap(document.getElementById(id), {
+    label: `${source.toUpperCase()} ${noun[0].toUpperCase() + noun.slice(1)}`, source, kind, noun,
+    path: '/public/overview/heatmap', fetchJson: pub, onData: () => heatBest[source] && heatBest[source].update(),
+  });
+}
+const heatFtp  = [{ map: _heatMap('heat-ftp-map', 'ftp', 'downloads', 'downloads'), noun: 'download' },
+                  { map: _heatMap('heat-ftp-up-map', 'ftp', 'uploads', 'uploads'), noun: 'upload' }];
+const heatHttp = [{ map: _heatMap('heat-http-map', 'http', 'downloads', 'downloads'), noun: 'download' }];
+heatBest.ftp  = HeatmapUI.createBestTimes(document.getElementById('heat-ftp-best'), heatFtp, 'FTP');
+heatBest.http = HeatmapUI.createBestTimes(document.getElementById('heat-http-best'), heatHttp, 'HTTP');
+const heatMaps = [...heatFtp, ...heatHttp].map(r => r.map);
 const heatPicker = HeatmapUI.createRangePicker(document.getElementById('heat-range'),
   { initial: '30d', onChange: (q, label) => heatMaps.forEach(m => m.load(q, label)) });
 function loadHeatmaps() { const c = heatPicker.current(); heatMaps.forEach(m => m.load(c.query, c.label)); }

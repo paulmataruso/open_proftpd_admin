@@ -336,10 +336,10 @@ def warmup_stats_cache():
         get_upload_timeline(days=30, bucket="day")
     except Exception:
         pass
-    # Heatmaps: one all-history hourly series per source serves every range.
-    for source in ("ftp", "http"):
+    # Heatmaps: one all-history hourly series per source/kind serves every range.
+    for source, kind in (("ftp", "downloads"), ("http", "downloads"), ("ftp", "uploads"), ("ftp", "uploads_public")):
         try:
-            _heat_series_all(source)
+            _heat_series_all(source, kind)
         except Exception:
             pass
     # Last: the public overview's windowed Top Files/IPs. A cold 1y compute
@@ -1267,38 +1267,52 @@ _HEAT_SQL = """
     SELECT h, SUM(n) AS n, SUM(b) AS b FROM (
         SELECT floor(extract(epoch FROM logged_at) / 3600)::bigint AS h,
                COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b
-        FROM user_downloads WHERE source = %s {cond}
+        FROM user_{table} WHERE source = %s {cond} {user_cond}
         GROUP BY h
         UNION ALL
         SELECT floor(extract(epoch FROM logged_at) / 3600)::bigint AS h,
                COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b
-        FROM anon_downloads WHERE source = %s {cond}
+        FROM anon_{table} WHERE source = %s {cond}
         GROUP BY h
     ) s GROUP BY h ORDER BY h
 """
 
 
-def _heat_rows(source: str, since_h: Optional[int] = None) -> list:
+# kind -> (user_/anon_ table suffix, extra filter on the user_ table). Whitelisted,
+# embedded in SQL. "uploads_public" backs the public route: it drops private
+# users' uploads (their activity stays off public routes). ftp_activity_users
+# is the backend-published trusted/private username list in db_logs.
+HEAT_KINDS = {
+    "downloads": ("downloads", ""),
+    "uploads": ("uploads", ""),
+    "uploads_public": ("uploads", "AND username NOT IN "
+                       "(SELECT username FROM ftp_activity_users WHERE user_class = 'private')"),
+}
+
+
+def _heat_rows(source: str, kind: str, since_h: Optional[int] = None) -> list:
+    assert kind in HEAT_KINDS
     cond, extra = "", []
     if since_h is not None:
         cond, extra = "AND logged_at >= to_timestamp(%s)", [since_h * 3600]
     with _conn() as conn:
-        rows = _q(conn, _HEAT_SQL.format(cond=cond), [source, *extra, source, *extra])
+        table, user_cond = HEAT_KINDS[kind]
+        rows = _q(conn, _HEAT_SQL.format(cond=cond, table=table, user_cond=user_cond), [source, *extra, source, *extra])
     return [[int(r["h"]), int(r["n"]), int(r["b"])] for r in rows]
 
 
-def _heat_series_all(source: str) -> dict:
+def _heat_series_all(source: str, kind: str) -> dict:
     def _compute():
         computed_h = int(datetime.now(timezone.utc).timestamp() // 3600)
-        return {"computed_h": computed_h, "rows": _heat_rows(source)}
-    return _swr(f"heat_all:{source}", _compute, _HEAT_TTL)
+        return {"computed_h": computed_h, "rows": _heat_rows(source, kind)}
+    return _swr(f"heat_all:{kind}:{source}", _compute, _HEAT_TTL)
 
 
-def _heat_series(source: str) -> dict[int, tuple[int, int]]:
-    """{epoch_hour: (downloads, bytes)} for all history, current to the minute."""
-    base = _heat_series_all(source)
+def _heat_series(source: str, kind: str) -> dict[int, tuple[int, int]]:
+    """{epoch_hour: (transfers, bytes)} for all history, current to the minute."""
+    base = _heat_series_all(source, kind)
     cut = int(base["computed_h"])
-    tail = _cached_fresh(f"heat_tail:{source}:{cut}", lambda: _heat_rows(source, cut), _HEAT_TAIL_TTL)
+    tail = _cached_fresh(f"heat_tail:{kind}:{source}:{cut}", lambda: _heat_rows(source, kind, cut), _HEAT_TAIL_TTL)
     series = {h: (n, b) for h, n, b in base["rows"] if h < cut}
     series.update({h: (n, b) for h, n, b in tail})
     return series
@@ -1321,8 +1335,9 @@ def _zone(tz: Optional[str]):
 
 
 def get_activity_heatmap(source: str, tz: Optional[str] = None, days: Optional[int] = None,
-                         start: Optional[datetime] = None, end: Optional[datetime] = None) -> dict:
-    """Downloads and bytes per (weekday, hour) in `tz`; rows are Monday..Sunday.
+                         start: Optional[datetime] = None, end: Optional[datetime] = None,
+                         kind: str = "downloads") -> dict:
+    """Transfers (`kind` = downloads or uploads) and bytes per (weekday, hour) in `tz`; rows are Monday..Sunday.
 
     Range: `start`/`end` (custom; `end` defaults to now), else the last `days`,
     else all history. Whole hours: an hour is included if the range touches it.
@@ -1331,7 +1346,7 @@ def get_activity_heatmap(source: str, tz: Optional[str] = None, days: Optional[i
     a per-hour average, so cells stay comparable whatever the range.
     """
     tz_name, zone = _zone(tz)
-    series = _heat_series(source)
+    series = _heat_series(source, kind)
     now_h = int(datetime.now(timezone.utc).timestamp() // 3600)
     first_h = min(series) if series else now_h
 
@@ -1363,7 +1378,7 @@ def get_activity_heatmap(source: str, tz: Optional[str] = None, days: Optional[i
         return datetime.fromtimestamp(h * 3600, timezone.utc).isoformat()
 
     return {
-        "source": source, "tz": tz_name,
+        "source": source, "kind": kind, "tz": tz_name,
         "start": _iso(start_h) if end_h >= start_h else None,
         "end": _iso(end_h + 1) if end_h >= start_h else None,
         "first_data": _iso(first_h) if series else None,

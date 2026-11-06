@@ -4,9 +4,10 @@
  * draw identically. Relies on the page's .chart-card / .range-tab / .sort-tab
  * styles and CSS variables; everything heatmap-specific is injected below.
  *
- *   const map = HeatmapUI.createMap(el, { label, source, path, fetchJson });
+ *   const map = HeatmapUI.createMap(el, { label, source, path, fetchJson, kind?, noun?, onData? });
  *   const picker = HeatmapUI.createRangePicker(el, { initial: '30d', onChange: (query, label) => map.load(query, label) });
  *   map.load(picker.current().query, picker.current().label);
+ *   const best = HeatmapUI.createBestTimes(el, [{ map, noun: 'download' }, ...], 'FTP');  // call best.update() from onData
  *
  * fetchJson(path) must resolve to { ok, data }. The backend
  * (/admin/logs/heatmap, /public/overview/heatmap) returns per-cell totals plus
@@ -17,18 +18,22 @@
   'use strict';
 
   const CSS = `
-.hm-grid { display: grid; grid-template-columns: 2.4rem repeat(24, minmax(0, 1fr)) 3.4rem; gap: 2px; font-family: var(--mono); font-size: 0.62rem; color: var(--text3); transition: opacity .2s; }
+.hm-grid { display: grid; grid-template-columns: 2.4rem repeat(24, minmax(0, 1fr)) 14px 3.6rem; gap: 2px; font-family: var(--mono); font-size: 0.62rem; color: var(--text3); transition: opacity .2s; }
 .hm-grid.loading { opacity: .45; }
 .hm-grid .hl { display: flex; align-items: center; }
 .hm-grid .hx { white-space: nowrap; overflow: visible; }
 .hm-grid .hc { aspect-ratio: 1.35; min-height: 12px; border-radius: 2px; background: var(--bg3); }
 .hm-grid .hc:hover { outline: 2px solid var(--text); outline-offset: -1px; }
 .hm-grid .hc.peak:not(:hover) { outline: 1px solid var(--text); outline-offset: -1px; }
-.hm-grid .hd { display: flex; align-items: center; padding-left: 4px; }
+.hm-grid .hd, .hm-grid .hdl { border-left: 1px solid var(--border2); padding-left: 8px; }
+.hm-grid .hd { display: flex; align-items: center; }
 .hm-grid .hd i, .hm-grid .hh i { display: block; border-radius: 2px; }
-.hm-grid .hd i { height: 55%; }
-.hm-grid .hh { height: 28px; display: flex; align-items: flex-end; }
+.hm-grid .hd:hover i, .hm-grid .hh:hover i { outline: 1px solid var(--text); }
+.hm-grid .hd i { height: 60%; }
+.hm-grid .hgap { grid-column: 1 / -1; height: 12px; border-bottom: 1px solid var(--border2); margin-bottom: 6px; }
+.hm-grid .hh { height: 34px; display: flex; align-items: flex-end; }
 .hm-grid .hh i { width: 100%; }
+.hm-grid .hml { color: var(--text3); font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .hm-empty { grid-column: 1 / -1; padding: 2rem 0; text-align: center; color: var(--text3); font-size: 0.8rem; font-family: var(--sans); }
 .hm-sub { color: var(--text3); font-weight: 400; text-transform: none; letter-spacing: 0; font-size: 0.75rem; margin-left: 0.4rem; }
 .hm-foot { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; flex-wrap: wrap; margin-top: 0.75rem; font-size: 0.72rem; color: var(--text2); }
@@ -41,9 +46,18 @@
 .hm-custom input { color-scheme: dark; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: 0.72rem; padding: 0.2rem 0.4rem; }
 .hm-custom input:focus { outline: none; border-color: var(--accent); }
 .hm-custom .hm-err { color: var(--red); }
+.hm-best-wrap { overflow-x: auto; }
+.hm-best { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.hm-best th { text-align: left; font-size: 0.66rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.hm-best td { padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--border); color: var(--text2); white-space: nowrap; }
+.hm-best tr:last-child td { border-bottom: none; }
+.hm-best td.k { color: var(--text); font-weight: 600; font-family: var(--sans); }
+.hm-best td.when { color: var(--text); font-family: var(--mono); }
+.hm-best .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 0.5rem; vertical-align: 0; }
+.hm-best-note { margin-top: 0.75rem; font-size: 0.7rem; color: var(--text3); line-height: 1.5; }
 #hm-tip { position: fixed; z-index: 1000; pointer-events: none; display: none; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius); padding: 0.5rem 0.65rem; font-size: 0.75rem; color: var(--text2); line-height: 1.45; box-shadow: 0 4px 16px rgba(0,0,0,.4); max-width: 280px; }
 #hm-tip b { color: var(--text); font-weight: 600; }
-@media (max-width: 600px) { .hm-grid { grid-template-columns: 1.9rem repeat(24, minmax(0, 1fr)) 2.2rem; gap: 1px; font-size: 0.55rem; } }
+@media (max-width: 600px) { .hm-grid { grid-template-columns: 1.9rem repeat(24, minmax(0, 1fr)) 8px 2.4rem; gap: 1px; font-size: 0.55rem; } }
 `;
 
   function injectCss() {
@@ -89,11 +103,13 @@
   // ── Map ────────────────────────────────────────────────────────────────────
   function createMap(el, opts) {
     injectCss();
+    const noun = opts.noun || 'downloads';
+    const Noun = noun[0].toUpperCase() + noun.slice(1);
     el.innerHTML = `
       <div class="chart-card">
         <h3><span>Busiest Times — ${esc(opts.label)}<span class="hm-sub"></span></span>
           <span class="sort-toggle-group">
-            <button class="sort-tab active" data-metric="count">Downloads</button>
+            <button class="sort-tab active" data-metric="count">${Noun}</button>
             <button class="sort-tab" data-metric="bytes">Data</button>
           </span></h3>
         <div class="hm-grid"><div class="hm-empty">Loading…</div></div>
@@ -101,7 +117,7 @@
           <span class="hm-scale">quiet <span class="ramp" style="background:${RAMP_CSS}"></span> busy</span></div>
       </div>`;
     const grid = el.querySelector('.hm-grid'), sub = el.querySelector('.hm-sub'), peakEl = el.querySelector('.hm-peak');
-    const st = { data: null, label: '', metric: 'count', seq: 0 };
+    const st = { data: null, label: '', metric: 'count', seq: 0, loading: false };
 
     el.querySelectorAll('[data-metric]').forEach(b => b.addEventListener('click', () => {
       st.metric = b.dataset.metric;
@@ -114,25 +130,31 @@
     async function load(query, label) {
       const seq = ++st.seq;  // drop responses from an older range
       st.label = label || '';
+      st.loading = true;
       grid.classList.add('loading');
       try {
         const tzQS = TZ ? `&tz=${encodeURIComponent(TZ)}` : '';
-        const { ok, data } = await opts.fetchJson(`${opts.path}?source=${opts.source}${query ? '&' + query : ''}${tzQS}`);
+        const kindQS = opts.kind ? `&kind=${opts.kind}` : '';
+        const { ok, data } = await opts.fetchJson(`${opts.path}?source=${opts.source}${kindQS}${query ? '&' + query : ''}${tzQS}`);
         if (seq !== st.seq) return;
         if (!ok) throw new Error('heatmap');
         st.data = data;
         render();
       } catch (e) {
-        if (seq === st.seq) { grid.innerHTML = '<div class="hm-empty">Failed to load</div>'; peakEl.textContent = ''; }
+        if (seq === st.seq) { st.data = null; grid.innerHTML = '<div class="hm-empty">Failed to load</div>'; peakEl.textContent = ''; }
       } finally {
-        if (seq === st.seq) grid.classList.remove('loading');
+        if (seq === st.seq) {
+          st.loading = false;
+          grid.classList.remove('loading');
+          if (opts.onData) opts.onData(st.data);
+        }
       }
     }
 
     function view() {
       const d = st.data, isBytes = st.metric === 'bytes';
       const raw = isBytes ? d.bytes : d.count;
-      return { d, isBytes, raw, grand: (isBytes ? d.total_bytes : d.total) || 0, unit: isBytes ? '/hr' : ' downloads/hr' };
+      return { d, isBytes, raw, grand: (isBytes ? d.total_bytes : d.total) || 0, unit: isBytes ? '/hr' : ` ${noun}/hr` };
     }
 
     function render() {
@@ -140,7 +162,7 @@
       const { d, isBytes, raw, grand, unit } = view();
       sub.textContent = `${st.label}${st.label ? ' · ' : ''}${d.tz}`;
       if (!grand) {
-        grid.innerHTML = '<div class="hm-empty">No downloads in this range</div>';
+        grid.innerHTML = `<div class="hm-empty">No ${noun} in this range</div>`;
         peakEl.textContent = '';
         return;
       }
@@ -162,7 +184,7 @@
 
       let html = '<div></div>';
       for (let h = 0; h < 24; h++) html += `<div class="hx">${h % 3 === 0 ? String(h).padStart(2, '0') : ''}</div>`;
-      html += '<div class="hx" style="padding-left:4px">per day</div>';
+      html += '<div></div><div class="hx hdl hml">per day</div>';
       for (let i = 0; i < 7; i++) {
         html += `<div class="hl">${DAYS[i]}</div>`;
         for (let h = 0; h < 24; h++) {
@@ -171,14 +193,14 @@
           html += `<div class="hc${i === peak[0] && h === peak[1] ? ' peak' : ''}" data-k="c" data-d="${i}" data-h="${h}"${bg}></div>`;
         }
         const t = dayAvg[i] / dayMax;
-        html += `<div class="hd" data-k="d" data-d="${i}"><i style="width:${Math.max(2, Math.round(100 * t))}%;background:${heatColor(t)}"></i></div>`;
+        html += `<div></div><div class="hd" data-k="d" data-d="${i}"><i style="width:${Math.max(2, Math.round(100 * t))}%;background:${heatColor(t)}"></i></div>`;
       }
-      html += '<div class="hl" style="font-size:0.55rem">per hr</div>';
+      html += '<div class="hgap"></div><div class="hl hml">per hr</div>';
       for (let h = 0; h < 24; h++) {
         const t = hourAvg[h] / hourMax;
         html += `<div class="hh" data-k="h" data-h="${h}"><i style="height:${Math.max(2, Math.round(100 * t))}%;background:${heatColor(t)}"></i></div>`;
       }
-      html += '<div></div>';
+      html += '<div></div><div></div>';
       grid.innerHTML = html;
       grid.setAttribute('aria-label', `Busiest ${DAYS[peak[0]]} ${hourLbl(peak[1])}, ${fmtVal(max, isBytes)}${unit}`);
       peakEl.innerHTML = `Peak <b>${DAYS[peak[0]]} ${hourLbl(peak[1])}</b> (${fmtVal(max, isBytes)}${unit})`
@@ -200,7 +222,7 @@
       const avgLine = !n ? 'not in this range'
         : k === 'd' ? `avg <b>${fmtVal(v / (n / 24), isBytes)}</b> per ${DAYS[i]}`
         : `avg <b>${fmtVal(v / n, isBytes)}</b>${unit}`;
-      const total = isBytes ? fmtBytes(v) : `${fmtNum(v)} downloads`;
+      const total = isBytes ? fmtBytes(v) : `${fmtNum(v)} ${noun}`;
       t.innerHTML = `<b>${title}</b><br>${avgLine}<br>${total} total · ${(100 * v / (grand || 1)).toFixed(1)}% of all`;
       t.style.display = 'block';
       const r = t.getBoundingClientRect();
@@ -210,7 +232,82 @@
       t.style.left = x + 'px'; t.style.top = y + 'px';
     }
 
-    return { load, render };
+    return { load, render, data: () => st.data, label: () => st.label, loading: () => st.loading };
+  }
+
+  // ── Best / worst times table ───────────────────────────────────────────────
+  // rows: [{ map, noun: 'download' }]. "Best" = the weekday/hour with the least
+  // data moved (least load, so the fastest transfers), "worst" = the most. Ties
+  // (e.g. the many hours with no uploads at all) go to the slot with the least
+  // traffic on the other maps. Only slots that occurred in the range count.
+  function createBestTimes(el, rows, title) {
+    injectCss();
+    el.innerHTML = `
+      <div class="chart-card">
+        <h3><span>Best &amp; Worst Times${title ? ' — ' + esc(title) : ''}<span class="hm-sub"></span></span></h3>
+        <div class="hm-best-wrap"><table class="hm-best">
+          <thead><tr><th></th><th>Day &amp; hour</th><th>Average then</th><th>Day overall</th><th>Hour overall</th></tr></thead>
+          <tbody><tr><td colspan="5" style="text-align:center;color:var(--text3)">Loading…</td></tr></tbody>
+        </table></div>
+        <div class="hm-best-note">Best = least data transferred at that time (least load on the server, so usually the fastest);
+          worst = the most. Averages per hour over the selected range, in your local time.</div>
+      </div>`;
+    const tbody = el.querySelector('tbody'), sub = el.querySelector('.hm-sub');
+
+    // Average bytes / transfers per hour for each weekday/hour cell; null where the slot never occurred.
+    const cellAvg = d => d.bytes.map((row, i) => row.map((b, h) => d.slots[i][h]
+      ? { b: b / d.slots[i][h], n: d.count[i][h] / d.slots[i][h] } : null));
+    const pick = (cands, worst) => cands.reduce((best, c) => {
+      if (!best) return c;
+      const s = worst ? -1 : 1;
+      if (c.v !== best.v) return s * (c.v - best.v) < 0 ? c : best;
+      return s * (c.tie - best.tie) < 0 ? c : best;
+    }, null);
+
+    function update() {
+      if (rows.some(r => r.map.loading())) return;  // wait until every map shows the same range
+      const ds = rows.map(r => r.map.data());
+      const d0 = ds.find(Boolean);
+      if (!d0) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text3)">No data</td></tr>'; return; }
+      const label = rows.map(r => r.map.label()).find(Boolean) || '';
+      sub.textContent = `${label}${label ? ' · ' : ''}${d0.tz}`;
+      const avgs = ds.map(d => d && cellAvg(d));
+      // Other maps' load at a cell / day / hour, for tie-breaks.
+      const otherCell = (k, i, h) => sum(avgs.map((a, j) => (j !== k && a && a[i][h]) ? a[i][h].b : 0));
+
+      let html = '';
+      rows.forEach((r, k) => {
+        const d = ds[k], a = avgs[k];
+        const nounPl = r.noun + 's';
+        if (!d) { html += `<tr><td class="k" colspan="5">${esc(r.noun)}: failed to load</td></tr>`; return; }
+        const cells = [];
+        for (let i = 0; i < 7; i++) for (let h = 0; h < 24; h++)
+          if (a[i][h]) cells.push({ i, h, v: a[i][h].b, n: a[i][h].n, tie: otherCell(k, i, h) });
+        const days = [...Array(7).keys()].map(i => {
+          const n = sum(d.slots[i]) / 24;
+          return n ? { i, v: sum(d.bytes[i]) / n, tie: sum(d.count[i]) / n } : null;
+        }).filter(Boolean);
+        const hours = [...Array(24).keys()].map(h => {
+          const n = sum(d.slots.map(x => x[h]));
+          return n ? { h, v: sum(d.bytes.map(x => x[h])) / n, tie: sum(d.count.map(x => x[h])) / n } : null;
+        }).filter(Boolean);
+        if (!cells.length) { html += `<tr><td class="k" colspan="5">No ${esc(nounPl)} in this range</td></tr>`; return; }
+        [false, true].forEach(worst => {
+          const c = pick(cells, worst), dy = pick(days, worst), hr = pick(hours, worst);
+          const colour = worst ? heatColor(1) : heatColor(0);
+          html += `<tr>
+            <td class="k"><span class="dot" style="background:${colour}"></span>${worst ? 'Worst' : 'Best'} time to ${esc(r.noun)}</td>
+            <td class="when">${DAYS[c.i]} ${hourLbl(c.h)}–${hourLbl((c.h + 1) % 24)}</td>
+            <td>${fmtBytes(Math.round(c.v))}/hr · ${fmtVal(c.n, false)} ${esc(nounPl)}/hr</td>
+            <td class="when">${dy ? DAYS[dy.i] : '—'}</td>
+            <td class="when">${hr ? `${hourLbl(hr.h)}–${hourLbl((hr.h + 1) % 24)}` : '—'}</td>
+          </tr>`;
+        });
+      });
+      tbody.innerHTML = html;
+    }
+
+    return { update };
   }
 
   // ── Range picker: presets + custom From/To ─────────────────────────────────
@@ -267,5 +364,5 @@
     return { current: () => cur, isCustom: () => cur.key === 'custom' };
   }
 
-  window.HeatmapUI = { createMap, createRangePicker };
+  window.HeatmapUI = { createMap, createRangePicker, createBestTimes };
 })();

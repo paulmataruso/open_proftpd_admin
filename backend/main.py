@@ -1863,11 +1863,11 @@ def log_user_breakdown(
 
 
 def _heatmap(source: str, tz: Optional[str], days: Optional[int],
-             start: Optional[datetime], end: Optional[datetime]):
+             start: Optional[datetime], end: Optional[datetime], kind: str = "downloads"):
     if start and end and start >= end:
         raise HTTPException(status_code=422, detail="start must be before end")
     try:
-        return ftplogs.get_activity_heatmap(source=source, tz=tz, days=days, start=start, end=end)
+        return ftplogs.get_activity_heatmap(source=source, tz=tz, days=days, start=start, end=end, kind=kind)
     except Exception as e:
         _logs_err(e)
 
@@ -1881,9 +1881,10 @@ def log_heatmap(
     days: Optional[int] = Query(None, ge=1, le=3650),
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
+    kind: str = Query("downloads", pattern="^(downloads|uploads)$"),
     _: str = Depends(get_current_admin),
 ):
-    return _heatmap(source, tz, days, start, end)
+    return _heatmap(source, tz, days, start, end, kind)
 
 
 @app.get("/admin/logs/earliest")
@@ -2041,7 +2042,8 @@ def public_overview_top_stats(
         _logs_err(e)
 
 
-# Aggregate counts only (no IPs/usernames), so nothing to mask.
+# Aggregate counts only (no IPs/usernames), so nothing to mask. Uploads come from
+# the "uploads_public" series, which leaves out private users' uploads.
 @app.get("/public/overview/heatmap")
 def public_overview_heatmap(
     source: str = Query(..., pattern="^(ftp|http)$"),
@@ -2049,8 +2051,9 @@ def public_overview_heatmap(
     days: Optional[int] = Query(None, ge=1, le=3650),
     start: Optional[datetime] = Query(None),
     end: Optional[datetime] = Query(None),
+    kind: str = Query("downloads", pattern="^(downloads|uploads)$"),
 ):
-    return _heatmap(source, tz, days, start, end)
+    return _heatmap(source, tz, days, start, end, "uploads_public" if kind == "uploads" else kind)
 
 
 @app.get("/public/overview/earliest")

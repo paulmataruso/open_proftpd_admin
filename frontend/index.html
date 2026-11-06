@@ -619,10 +619,12 @@ tbody tr:hover td { background: var(--bg3); }
           <!-- ── Busiest Times (activity heatmaps; drawn by static/heatmap.js) ── -->
           <div class="panel" id="panel-heat-ftp">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">
-              <span style="font-size:0.78rem;color:var(--text3)">Average FTP downloads per hour, by weekday and hour in your local time. Hover for details.</span>
+              <span style="font-size:0.78rem;color:var(--text3)">Average FTP downloads and uploads per hour, by weekday and hour in your local time. Hover for details.</span>
               <div id="heat-ftp-range"></div>
             </div>
             <div id="heat-ftp-map"></div>
+            <div id="heat-ftp-up-map"></div>
+            <div id="heat-ftp-best"></div>
           </div>
           <div class="panel" id="panel-heat-http">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">
@@ -630,6 +632,7 @@ tbody tr:hover td { background: var(--bg3); }
               <div id="heat-http-range"></div>
             </div>
             <div id="heat-http-map"></div>
+            <div id="heat-http-best"></div>
           </div>
 
           <!-- ── All Users ── -->
@@ -2393,16 +2396,22 @@ var _heatPages = {};
 function openHeatPage(source) {
   let p = _heatPages[source];
   if (!p) {
-    const map = HeatmapUI.createMap(document.getElementById(`heat-${source}-map`), {
-      label: source.toUpperCase(), source, path: '/admin/logs/heatmap', fetchJson: path => api('GET', path),
+    const SRC = source.toUpperCase();
+    let best = null;
+    const mk = (elId, kind, noun) => HeatmapUI.createMap(document.getElementById(elId), {
+      label: `${SRC} ${noun[0].toUpperCase() + noun.slice(1)}`, source, kind, noun,
+      path: '/admin/logs/heatmap', fetchJson: path => api('GET', path), onData: () => best && best.update(),
     });
+    const maps = [{ map: mk(`heat-${source}-map`, 'downloads', 'downloads'), noun: 'download' }];
+    if (source === 'ftp') maps.push({ map: mk('heat-ftp-up-map', 'uploads', 'uploads'), noun: 'upload' });  // HTTP has no uploads
+    best = HeatmapUI.createBestTimes(document.getElementById(`heat-${source}-best`), maps, SRC);
     const picker = HeatmapUI.createRangePicker(document.getElementById(`heat-${source}-range`), {
-      initial: '30d', onChange: (q, label) => map.load(q, label),
+      initial: '30d', onChange: (q, label) => maps.forEach(m => m.map.load(q, label)),
     });
-    p = _heatPages[source] = { map, picker };
+    p = _heatPages[source] = { maps, picker };
   }
   const c = p.picker.current();
-  p.map.load(c.query, c.label);
+  p.maps.forEach(m => m.map.load(c.query, c.label));
 }
 
 function _setStatCard(valId, trendId, metric, isBytes) {
