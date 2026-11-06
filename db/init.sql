@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS trusted_ftp_users (
     notes         TEXT
 );
 
+-- Private FTP users — R/W, chrooted under PRIVATE_FTP_BASE_PATH (separate from trusted)
+CREATE TABLE IF NOT EXISTS private_ftp_users (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username      VARCHAR(64) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    ftp_home_dir  TEXT NOT NULL,
+    enabled       BOOLEAN NOT NULL DEFAULT true,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    notes         TEXT
+);
+
 -- Admin portal intrusion attempts
 -- Tracks non-admin users who attempt to log in to the admin portal.
 CREATE TABLE IF NOT EXISTS admin_intrusion_attempts (
@@ -86,3 +97,12 @@ CREATE TABLE IF NOT EXISTS banned_usernames (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS banned_usernames_username_idx ON banned_usernames(username);
+
+-- Threat whitelist: IPs/CIDRs exempt from admin-portal intrusion detection and IP bans
+CREATE TABLE IF NOT EXISTS whitelisted_ips (
+    id         BIGSERIAL PRIMARY KEY,
+    cidr       VARCHAR(49) UNIQUE NOT NULL,
+    notes      TEXT,
+    created_by VARCHAR(64),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

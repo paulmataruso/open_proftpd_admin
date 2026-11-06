@@ -1,0 +1,20 @@
+# Reloads ProFTPd when ciosuseradd regenerates the <IfUser>/<Directory> config
+# it Includes (new/removed trusted or private users). ftpd.passwd is read per
+# login and is deliberately NOT watched.
+#
+# Install (on the ProFTPd host, as root):
+#   cp proftpd-reload/ciosuseradd-proftpd-reload.{path,service} /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now ciosuseradd-proftpd-reload.path
+#
+# Paths must match FTPD_PASSWD_DIR in .env.
+
+[Unit]
+Description=Watch ciosuseradd-generated ProFTPd config for changes
+
+[Path]
+PathChanged=/etc/proftpd/ftpd_trusted.conf
+PathChanged=/etc/proftpd/ftpd_private.conf
+Unit=ciosuseradd-proftpd-reload.service
+
+[Install]
+WantedBy=multi-user.target

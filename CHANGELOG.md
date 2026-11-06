@@ -7,6 +7,31 @@ This project uses [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Private FTP users**: admin-provisioned read/write accounts chrooted under a separate `PRIVATE_FTP_BASE_PATH` (not inside the public FTP root). Home folders are created by the backend (750, `FTP_UID:PRIVATE_FTP_GID`); deleting a user keeps the folder. Generated `ftpd_private.conf` uses `DefaultRoot ~ <PRIVATE_FTP_GROUP>` plus a deny-all on the base and a per-folder `AllowUser` lock. New admin panel, dashboard card, and Live Sessions class.
+- **Automatic ProFTPd reload**: host-side `ciosuseradd-proftpd-reload.path`/`.service` (in `proftpd-reload/`) watch `ftpd_trusted.conf` and `ftpd_private.conf` and run a config test + graceful `systemctl reload proftpd` on change — new trusted/private users work immediately. Generated files are no longer rewritten when unchanged.
+- **FTP Bans** (anonymous users only): host-side detector `ciosuseradd-ftpban` reads a dedicated ProFTPd session log and auto-bans anonymous IPs that idle-squat (`TimeoutNoTransfer`/`TimeoutIdle`), reconnect-storm or abort-loop, enforced with a dedicated nftables table (no ProFTPd reloads). Banned clients get an FTP `421` reply with a ban message configurable per ban type (with `{remaining}`/`{expires}`/`{ip}`/`{reason}` placeholders) from a built-in responder. A separate watchdog timer restarts the ban daemon if it hangs or its responder stops answering, and **fails open** (removes all firewall bans) if it can't be recovered; the panel shows the state with a Retry button. Admin panel with active bans, watchlist, top offenders, history, charts, per-IP detail, manual ban/unban/duration, dry-run mode, editable rules, escalation, whitelist and ports; **Ban IP** button on anonymous Live Sessions rows. New setting `FTPBAN_DIR`.
+- **R/W Activity log** for trusted and private users: every upload, download, file delete, folder create/delete, rename/move, chmod and login (including failed attempts) is recorded from the ProFTPd log into `ftp_activity` (kept indefinitely), with history backfilled from the existing log. New panel with per-user summary, filters, pagination and CSV export, plus an **Activity** button on each trusted/private user.
+- **IP whitelists** for both FTP Bans and Security Threats, each with its own tab (add IP/CIDR with a note, remove) and **Whitelist** buttons on ban/watchlist/offender/incident rows. FTP: never auto-banned, active auto bans lifted on add. Threats: no intrusion warning, lockout or auto bans, and IP bans don't apply.
+- **"Wrong login page?" pointer**: optional `WRONG_PORTAL_NAME`/`WRONG_PORTAL_URL` show a prominent "Trying to get to X? Please go to URL" box on the admin login warning and ban messages.
+- **Public overview time picker**: 1m, 5m, 1h, 12h, 24h, 1 week, 1 month, 1 year, All. It drives every activity section, including Top Files and Top IPs, which were always all-time before. Short ranges use finer chart buckets, per-minute/per-hour averages and faster auto-refresh (every 10s at 1m/5m).
+- **Busiest-times heatmaps**: day-of-week × hour-of-day grids of downloads (or data) for FTP and for HTTP, in the viewer's local timezone, coloured green (quiet) to red (busy), with per-day and per-hour totals and peak/quietest hours. Own **Busiest Times** sidebar section (FTP Heatmap, HTTP Heatmap) and a section on the public overview page. Time range: presets (24h–All) or a custom From/To picker.
+- New settings: `PRIVATE_FTP_BASE_PATH`, `PRIVATE_FTP_GROUP`, `PRIVATE_FTP_GID` (dedicated host group required).
+
+### Fixed
+- FTP and HTTP log timestamps were stored as local time labelled UTC (offset dropped), shifting all FTP stats and live HTTP stats by 4–5h. Parsers now honour the offset; existing rows were migrated once (originals kept in `tz_fix_backup`).
+- Live Sessions showed 0% and no speed for large downloads for hours: ProFTPd's scoreboard doesn't track bytes under sendfile. The ftpwho exporter now reads real progress, speed and last-data time from `/proc`; the panel shows %/size/ETA, a stall warning, and per-command duration.
+- Logs database pinned at 100%+ CPU: the stats cache re-warmed ~80 multi-million-row aggregates every 4.5 minutes regardless of viewers, all in parallel, exhausting the connection pool (admin requests failed with "connection pool exhausted" and finished computes were discarded, so some stats were days old). Warmup now runs only at startup, cache TTLs scale with the time window (5 min → 1 h), background refreshes run two at a time, download stats no longer use `COUNT(DISTINCT)` (which spilled TBs of temp files), and `db_logs` gets tuned memory settings (new optional `LOGS_PG_*` settings).
+- Removed 1.67M duplicate download rows created by repeated log-archive imports (HTTP 2026-05-31→06-10 and 06-23→06-26, FTP anonymous 2026-05-11); genuine repeated chunk requests kept. Removed rows kept in `dedupe_backup_*`.
+
+### Changed
+- Usernames are now checked for uniqueness across regular, trusted, and private users on every create path (previously regular registration didn't check trusted users).
+- Public dashboard top files/users exclude private-user activity.
+
+---
+
 ## [0.1.0] — 2026-10-03
 
 ### Added

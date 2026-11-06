@@ -1,8 +1,9 @@
+import ipaddress
 import re
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, List, Any
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from config import settings
 
@@ -402,6 +403,20 @@ class AnonUploadStats(BaseModel):
 _FTP_HOME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._\-/]*$')
 
 
+def _clean_ftp_home(v: str) -> str:
+    v = v.strip().strip('/')
+    if not v:
+        raise ValueError("FTP home directory is required")
+    parts = v.split('/')
+    if '..' in parts or '.' in parts:
+        raise ValueError("FTP home directory cannot contain path traversal components")
+    if '//' in v:
+        raise ValueError("FTP home directory cannot contain consecutive slashes")
+    if not _FTP_HOME_RE.match(v):
+        raise ValueError("FTP home dir: only letters, numbers, hyphens, underscores, dots, and slashes")
+    return v
+
+
 class TrustedUserCreateRequest(BaseModel):
     username: str
     password: str
@@ -431,17 +446,7 @@ class TrustedUserCreateRequest(BaseModel):
     @field_validator("ftp_home_dir")
     @classmethod
     def validate_ftp_home(cls, v):
-        v = v.strip().strip('/')
-        if not v:
-            raise ValueError("FTP home directory is required")
-        parts = v.split('/')
-        if '..' in parts or '.' in parts:
-            raise ValueError("FTP home directory cannot contain path traversal components")
-        if '//' in v:
-            raise ValueError("FTP home directory cannot contain consecutive slashes")
-        if not _FTP_HOME_RE.match(v):
-            raise ValueError("FTP home dir: only letters, numbers, hyphens, underscores, dots, and slashes")
-        return v
+        return _clean_ftp_home(v)
 
 
 class TrustedUserResponse(BaseModel):
@@ -463,6 +468,141 @@ class TrustedUserListResponse(BaseModel):
 
 class TrustedUserUpdateNotesRequest(BaseModel):
     notes: Optional[str] = None
+
+
+class PrivateUserCreateRequest(TrustedUserCreateRequest):
+    # Optional for private users — defaults to the username.
+    ftp_home_dir: Optional[str] = None
+
+    @field_validator("ftp_home_dir")
+    @classmethod
+    def validate_ftp_home(cls, v):
+        if v is None or not v.strip().strip('/'):
+            return None
+        return _clean_ftp_home(v)
+
+    @model_validator(mode="after")
+    def default_home(self):
+        if not self.ftp_home_dir:
+            self.ftp_home_dir = self.username
+        return self
+
+
+PrivateUserResponse = TrustedUserResponse
+class PrivateUserListResponse(TrustedUserListResponse):
+    base_path: str
+PrivateUserUpdateNotesRequest = TrustedUserUpdateNotesRequest
+
+
+# ── FTP ban system (see ftpban.py / host daemon ftpban/ftpban.py) ──────────────
+
+_ANON_USER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+_PORTS_RE = re.compile(r"^\d{1,5}(-\d{1,5})?(,\d{1,5}(-\d{1,5})?)*$")
+
+
+class FtpBanRule(BaseModel):
+    enabled: bool
+    count: int = Field(ge=1, le=100000)
+    window_min: int = Field(ge=1, le=10080)
+    ban_min: int = Field(ge=1, le=525600)
+
+
+class FtpBanRules(BaseModel):
+    notransfer: FtpBanRule
+    idle: FtpBanRule
+    connect: FtpBanRule
+    aborted: FtpBanRule
+
+
+class FtpBanEscalation(BaseModel):
+    enabled: bool
+    multiplier: float = Field(ge=1, le=10)
+    lookback_days: int = Field(ge=1, le=365)
+    max_ban_hours: int = Field(ge=1, le=87600)
+
+
+class FtpBanMessages(BaseModel):
+    notransfer: str = Field(min_length=1, max_length=300)
+    idle: str = Field(min_length=1, max_length=300)
+    connect: str = Field(min_length=1, max_length=300)
+    aborted: str = Field(min_length=1, max_length=300)
+    manual: str = Field(min_length=1, max_length=300)
+
+    @field_validator("*")
+    @classmethod
+    def _one_line(cls, v):
+        v = re.sub(r"\s+", " ", v).strip()
+        if not v:
+            raise ValueError("Message can't be empty")
+        return v
+
+
+class FtpBanSettings(BaseModel):
+    enforce: bool
+    anon_users: List[str] = Field(min_length=1, max_length=20)
+    rules: FtpBanRules
+    escalation: FtpBanEscalation
+    # Managed via /admin/ftpban/whitelist; ignored here so a stale Settings form can't clobber it.
+    whitelist: Optional[List[str]] = None
+    ports: str
+    control_port: int = Field(ge=1, le=65535)
+    responder_port: int = Field(ge=1024, le=65535)
+    retention_days: int = Field(ge=1, le=3650)
+    messages: FtpBanMessages
+
+    @model_validator(mode="after")
+    def _port_clash(self):
+        if self.responder_port == self.control_port:
+            raise ValueError("Responder port must differ from the FTP control port")
+        for part in self.ports.split(","):
+            lo, _, hi = part.partition("-")
+            if int(lo) <= self.responder_port <= int(hi or lo):
+                raise ValueError("Responder port must not be inside the blocked ports")
+        return self
+
+    @field_validator("anon_users")
+    @classmethod
+    def _anon_users(cls, v):
+        v = [u.strip() for u in v if u.strip()]
+        if not v or not all(_ANON_USER_RE.match(u) for u in v):
+            raise ValueError("Anonymous usernames: letters, numbers, . _ - only")
+        return v
+
+    @field_validator("ports")
+    @classmethod
+    def _ports(cls, v):
+        v = re.sub(r"\s+", "", v)
+        if not _PORTS_RE.match(v):
+            raise ValueError("Ports: comma-separated ports or ranges, e.g. 21,15000-30000")
+        for part in v.split(","):
+            lo, _, hi = part.partition("-")
+            lo, hi = int(lo), int(hi or lo)
+            if not (1 <= lo <= hi <= 65535):
+                raise ValueError(f"Ports: '{part}' is out of range")
+        return v
+
+
+class FtpBanManualRequest(BaseModel):
+    ip: str
+    duration_minutes: Optional[int] = Field(default=None, ge=1, le=525600)  # None = permanent
+    reason: Optional[str] = Field(default=None, max_length=300)
+
+    @field_validator("ip")
+    @classmethod
+    def _ip(cls, v):
+        try:
+            return ipaddress.ip_address(v.strip()).compressed
+        except ValueError:
+            raise ValueError("Not a valid IPv4/IPv6 address")
+
+
+class FtpBanExpiryRequest(BaseModel):
+    duration_minutes: Optional[int] = Field(default=None, ge=1, le=525600)  # None = permanent, from now
+    enforce: Optional[bool] = None   # True = turn a dry-run entry into a real ban
+
+
+class FtpBanUnbanIPRequest(BaseModel):
+    ip: str
 
 
 # ── Security Threat Schemas ────────────────────────────────────────────────────
@@ -537,6 +677,42 @@ class ManualBanIPRequest(BaseModel):
         except ValueError:
             raise ValueError("Invalid IP address")
         return v
+
+
+def normalize_ip_or_cidr(v: str) -> str:
+    """'1.2.3.4' / '1.2.3.0/24' / '2001:db8::/32' -> canonical form; single hosts stay bare IPs."""
+    try:
+        net = ipaddress.ip_network(v.strip(), strict=False)
+    except ValueError:
+        raise ValueError("Not a valid IP address or CIDR range")
+    return str(net.network_address) if net.prefixlen == net.max_prefixlen else net.compressed
+
+
+class WhitelistIPRequest(BaseModel):
+    cidr: str
+    notes: Optional[str] = Field(default=None, max_length=300)
+
+    @field_validator("cidr")
+    @classmethod
+    def _cidr(cls, v):
+        return normalize_ip_or_cidr(v)
+
+
+class WhitelistIPEntry(BaseModel):
+    id: int
+    cidr: str
+    notes: Optional[str]
+    created_by: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WhitelistIPListResponse(BaseModel):
+    entries: List[WhitelistIPEntry]
+    total: int
+    your_ip: str
 
 
 class ManualBanUsernameRequest(BaseModel):

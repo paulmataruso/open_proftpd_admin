@@ -42,6 +42,18 @@ class TrustedFtpUser(Base):
     notes         = Column(Text, nullable=True)
 
 
+class PrivateFtpUser(Base):
+    __tablename__ = "private_ftp_users"
+
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username      = Column(String(64), unique=True, nullable=False)
+    password_hash = Column(Text, nullable=False)
+    ftp_home_dir  = Column(Text, nullable=False)   # relative to private_ftp_base_path
+    enabled       = Column(Boolean, nullable=False, default=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    notes         = Column(Text, nullable=True)
+
+
 class AdminConfig(Base):
     __tablename__ = "admin_config"
 
@@ -85,4 +97,15 @@ class BannedUsername(Base):
     reason     = Column(Text, nullable=True)
     banned_by  = Column(String(16), nullable=False, default="auto")
     notes      = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WhitelistedIP(Base):
+    """Admin-portal threat whitelist: IPs/CIDRs exempt from intrusion detection and IP bans."""
+    __tablename__ = "whitelisted_ips"
+
+    id         = Column(BigInteger, primary_key=True, autoincrement=True)
+    cidr       = Column(String(49), unique=True, nullable=False)   # bare IP for single hosts
+    notes      = Column(Text, nullable=True)
+    created_by = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

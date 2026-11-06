@@ -1,0 +1,35 @@
+# Host-side FTP ban detector + nftables enforcer for ciosuseradd's "FTP Bans" panel.
+#
+# Install (on the ProFTPd host, as root):
+#   cp ftpban/ftpban.py /usr/local/sbin/ciosuseradd-ftpban
+#   chmod 755 /usr/local/sbin/ciosuseradd-ftpban
+#   cp ftpban/ciosuseradd-ftpban.service /etc/systemd/system/
+#   cp ftpban/ciosuseradd-ftpban.logrotate /etc/logrotate.d/ciosuseradd-ftpban
+#   mkdir -p /var/log/proftpd-ciosban && chmod 750 /var/log/proftpd-ciosban
+#   cp proftpd/ftpd_ban.conf /etc/proftpd/ftpd_ban.conf
+#   # add "Include /etc/proftpd/ftpd_ban.conf" to /etc/proftpd/proftpd.conf, then
+#   # restart (not reload) proftpd once so the session log starts
+#   systemctl daemon-reload && systemctl enable --now ciosuseradd-ftpban
+#   # then install the watchdog: see ciosuseradd-ftpban-watchdog.service
+#
+# FTPBAN_DIR must match FTPBAN_DIR in .env (bind-mounted into backend).
+# Runs as root: it manages its own nftables table (inet ciosuseradd_ftpban).
+# It never touches ProFTPd itself.
+
+[Unit]
+Description=ciosuseradd FTP ban detector (anon idle/reconnect abuse -> nftables)
+After=proftpd.service
+
+[Service]
+Type=simple
+Environment=FTPBAN_DIR=/var/lib/ciosuseradd/ftpban
+Environment=FTPBAN_SESSION_LOG=/var/log/proftpd-ciosban/session.log
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/ciosuseradd-ftpban
+Restart=always
+RestartSec=5
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

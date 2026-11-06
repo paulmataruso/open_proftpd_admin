@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <script src="/static/chart.umd.min.js"></script>
+<script src="/static/heatmap.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
@@ -256,6 +257,11 @@ tbody tr:hover td { background: var(--bg3); }
 .threat-body .thl { color:#f87171;font-weight:600; }
 .threat-body .thb { display:block;color:#dc2626;font-weight:700;font-size:1.15rem;font-family:var(--mono);margin-top:0.5rem;letter-spacing:0.02em; }
 .threat-meta { font-size:0.73rem;color:#475569;margin-bottom:2rem;letter-spacing:0.04em; }
+/* "Wrong login page?" pointer (WRONG_PORTAL_NAME / WRONG_PORTAL_URL) */
+.wrong-portal { display:none;background:#fde047;color:#111;border:3px solid #facc15;border-radius:8px;padding:1rem 1.1rem;margin:0 0 1.25rem;font-size:1.15rem;font-weight:800;line-height:1.45;text-align:center;box-shadow:0 0 22px rgba(250,204,21,0.45); }
+.wrong-portal.show { display:block; }
+.wrong-portal a { color:#1d4ed8;text-decoration:underline;word-break:break-all; }
+#threat-overlay .wrong-portal { font-size:1.35rem;margin:0 0 1.75rem; }
 .threat-ack { background:#1a0000;border:2px solid #dc2626;color:#dc2626;padding:0.8rem 2.5rem;border-radius:6px;font-size:0.88rem;font-weight:700;letter-spacing:0.1em;cursor:pointer;text-transform:uppercase;transition:all 0.15s;font-family:var(--mono); }
 .threat-ack:hover { background:rgba(220,38,38,0.12);border-color:#ef4444;color:#ef4444; }
 
@@ -283,6 +289,30 @@ tbody tr:hover td { background: var(--bg3); }
 .ban-source { font-size:0.68rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;padding:0.15rem 0.45rem;border-radius:10px; }
 .ban-auto  { background:rgba(239,68,68,0.12);color:var(--red);border:1px solid rgba(239,68,68,0.2); }
 .ban-admin { background:rgba(59,130,246,0.12);color:var(--accent);border:1px solid rgba(59,130,246,0.2); }
+
+/* ── FTP Bans panel ── */
+.fb-tabs { display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);margin-bottom:1rem;flex-wrap:wrap; }
+.fb-tab { padding:0.55rem 1rem;border:none;border-bottom:2px solid transparent;margin-bottom:-1px;background:transparent;color:var(--text3);font-size:0.8rem;font-weight:500;cursor:pointer;transition:color 0.12s,border-color 0.12s;display:inline-flex;align-items:center;gap:0.4rem; }
+.fb-tab:hover { color:var(--text2); }
+.fb-tab.active { color:var(--accent-h);border-bottom-color:var(--accent); }
+.fb-tp { display:none; }
+.fb-tp.active { display:block; }
+.fb-alert { padding:0.6rem 0.9rem;border-radius:var(--radius);font-size:0.8rem;margin-bottom:1rem;border:1px solid; }
+.fb-alert.warn { background:rgba(245,158,11,0.08);color:var(--yellow);border-color:rgba(245,158,11,0.3); }
+.fb-alert.err  { background:rgba(239,68,68,0.08);color:var(--red);border-color:rgba(239,68,68,0.3); }
+.ban-dry   { background:rgba(245,158,11,0.12);color:var(--yellow);border:1px solid rgba(245,158,11,0.25); }
+.fb-meter { height:6px;border-radius:3px;background:var(--bg4);overflow:hidden;min-width:90px; }
+.fb-meter > div { height:100%;background:var(--yellow); }
+.fb-meter > div.hot { background:var(--red); }
+.fb-ev { display:inline-block;font-family:var(--mono);font-size:0.7rem;color:var(--text2);margin-right:0.6rem;white-space:nowrap; }
+.fb-rules td, .fb-rules th { padding:0.45rem 0.6rem; }
+.fb-rules input[type=number] { width:90px; }
+.fb-set input[type=number], .fb-set input[type=text], .fb-set textarea, .fb-set select { background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:0.8rem;padding:0.4rem 0.6rem;border-radius:var(--radius);outline:none; }
+.fb-set textarea { width:100%;resize:vertical; }
+.fb-set .row { display:flex;gap:1.25rem;flex-wrap:wrap;margin-bottom:0.9rem; }
+.fb-set .row .field { min-width:180px; }
+.fb-link { cursor:pointer;color:var(--accent-h); }
+.fb-link:hover { text-decoration:underline; }
 
 /* ── Live FTP sessions (ftpwho) ── */
 .live-bar { display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; margin-bottom:1.25rem; font-size:0.78rem; color:var(--text3); }
@@ -315,6 +345,15 @@ tbody tr:hover td { background: var(--bg3); }
 .uclass.anon       { color:var(--text3); border-color:var(--border2); }
 .uclass.registered { color:var(--accent-h); border-color:rgba(59,130,246,0.35); }
 .uclass.trusted    { color:var(--purple); border-color:rgba(139,92,246,0.4); }
+.act { font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;padding:0.12rem 0.45rem;border-radius:4px;border:1px solid;white-space:nowrap; }
+.act.upload   { color:var(--green);  border-color:rgba(16,185,129,0.35); }
+.act.download { color:var(--accent-h);border-color:rgba(59,130,246,0.35); }
+.act.delete, .act.rmdir { color:var(--red); border-color:rgba(239,68,68,0.35); }
+.act.mkdir    { color:var(--teal);   border-color:rgba(20,184,166,0.35); }
+.act.rename, .act.chmod { color:var(--yellow); border-color:rgba(245,158,11,0.35); }
+.act.login    { color:var(--text3);  border-color:var(--border2); }
+.act-fail { color:var(--red);font-family:var(--mono);font-size:0.72rem; }
+.uclass.private    { color:var(--green); border-color:rgba(34,197,94,0.35); }
 .uclass.other      { color:var(--teal); border-color:rgba(20,184,166,0.35); }
 .uclass.auth       { color:var(--yellow); border-color:rgba(245,158,11,0.35); }
 .proto { font-size:0.6rem; font-family:var(--mono); text-transform:uppercase; padding:0.05rem 0.35rem; border-radius:3px; background:var(--bg4); color:var(--text3); }
@@ -332,6 +371,14 @@ tbody tr:hover td { background: var(--bg3); }
 .sess-prog .nums { display:flex; justify-content:space-between; gap:0.5rem; font-family:var(--mono); font-size:0.7rem; color:var(--text2); }
 .sess-prog .nums .rate { color:var(--text); font-weight:600; }
 .sess-prog .quiet { font-size:0.74rem; color:var(--text3); }
+.sess { transition: opacity 0.35s ease, background 0.15s; }
+.sess.entering { opacity:0; }
+.sess.leaving { opacity:0; pointer-events:none; overflow:hidden; transition: opacity 0.3s ease, max-height 0.35s ease 0.15s, padding 0.35s ease 0.15s; }
+.sess-prog .bar > div.fill { transition: width 0.12s linear; }
+.sess-prog .xfer[hidden], .sess-prog .quiet[hidden], .sess-prog .sub[hidden] { display:none; }
+.sess-prog .sub { display:flex; justify-content:space-between; gap:0.5rem; font-family:var(--mono); font-size:0.66rem; color:var(--text3); margin-top:0.15rem; }
+.sess-prog .stall { color:var(--red); font-weight:600; }
+.sess-time .cmdt { font-size:0.66rem; color:var(--text3); }
 .sess-time { text-align:right; font-family:var(--mono); font-size:0.78rem; }
 .sess-time .pid { font-size:0.66rem; color:var(--text3); margin-top:0.15rem; }
 @media (max-width: 900px) {
@@ -354,6 +401,7 @@ tbody tr:hover td { background: var(--bg3); }
       <span class="thl">The first failed login is free.</span>
       <span class="thb">If you try again, your IP will be automatically<br>permanently banned from this server.</span>
     </div>
+    <div class="wrong-portal" data-wrong-portal></div>
     <div class="threat-meta">This incident has been logged with your IP address, username attempt, and timestamp.</div>
     <button class="threat-ack" onclick="closeThreatWarning()">I Understand</button>
   </div>
@@ -392,6 +440,7 @@ tbody tr:hover td { background: var(--bg3); }
     <div class="card">
       <h2>🔐 Admin Login</h2>
       <div id="login-alert" class="alert"></div>
+      <div class="wrong-portal" id="login-wrong-portal" data-wrong-portal></div>
       <div class="field"><label>Username</label><input type="text" id="l-user" autocomplete="username"></div>
       <div class="field"><label>Password</label><input type="password" id="l-pass" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div>
       <button class="btn btn-primary" onclick="doLogin()">Sign In</button>
@@ -411,9 +460,16 @@ tbody tr:hover td { background: var(--bg3); }
           <button class="nav-item active" id="nav-dashboard" onclick="navTo('dashboard')"><span class="nav-icon">◈</span> Dashboard</button>
         </div>
         <div class="nav-section">
+          <div class="nav-label">Busiest Times</div>
+          <button class="nav-item" id="nav-heat-ftp" onclick="navTo('heat-ftp')"><span class="nav-icon">▦</span> FTP Heatmap</button>
+          <button class="nav-item" id="nav-heat-http" onclick="navTo('heat-http')"><span class="nav-icon">▦</span> HTTP Heatmap</button>
+        </div>
+        <div class="nav-section">
           <div class="nav-label">User Accounts</div>
           <button class="nav-item" id="nav-users" onclick="navTo('users')"><span class="nav-icon">◎</span> All Users</button>
           <button class="nav-item" id="nav-trusted" onclick="navTo('trusted')"><span class="nav-icon">⊛</span> Trusted FTP</button>
+          <button class="nav-item" id="nav-private" onclick="navTo('private')"><span class="nav-icon">⊘</span> Private FTP</button>
+          <button class="nav-item" id="nav-activity" onclick="navTo('activity')"><span class="nav-icon">☰</span> R/W Activity</button>
           <button class="nav-item" id="nav-audit" onclick="navTo('audit')"><span class="nav-icon">≡</span> Audit Log</button>
         </div>
         <div class="nav-section">
@@ -432,6 +488,7 @@ tbody tr:hover td { background: var(--bg3); }
         </div>
         <div class="nav-section">
           <div class="nav-label">Security</div>
+          <button class="nav-item" id="nav-ftpban" onclick="navTo('ftpban')"><span class="nav-icon">⛔</span> FTP Bans <span id="nav-ftpban-badge" class="nav-badge" style="display:none"></span></button>
           <button class="nav-item" id="nav-threats" onclick="navTo('threats')"><span class="nav-icon">⚠</span> Threats <span id="nav-threats-badge" class="nav-badge" style="display:none"></span></button>
         </div>
         <div class="nav-section">
@@ -459,6 +516,7 @@ tbody tr:hover td { background: var(--bg3); }
               <div class="stat-card"><div class="stat-label">Active</div><div class="stat-val" style="color:var(--green)" id="s-enabled">—</div></div>
               <div class="stat-card"><div class="stat-label">Disabled</div><div class="stat-val" style="color:var(--red)" id="s-disabled">—</div></div>
               <div class="stat-card"><div class="stat-label">Trusted FTP</div><div class="stat-val" style="color:var(--teal)" id="s-trusted">—</div><div class="stat-sub" id="s-trusted-sub"></div></div>
+              <div class="stat-card"><div class="stat-label">Private FTP</div><div class="stat-val" style="color:var(--green)" id="s-private">—</div><div class="stat-sub" id="s-private-sub"></div></div>
             </div>
             <div class="table-card">
               <div class="table-toolbar"><span style="font-size:0.78rem;color:var(--text3)">Recent Registrations</span></div>
@@ -558,6 +616,22 @@ tbody tr:hover td { background: var(--bg3); }
             <div class="detail-card"><h3>Top IPs</h3><ul class="top-list" id="overview-top-ips"></ul></div>
           </div>
 
+          <!-- ── Busiest Times (activity heatmaps; drawn by static/heatmap.js) ── -->
+          <div class="panel" id="panel-heat-ftp">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">
+              <span style="font-size:0.78rem;color:var(--text3)">Average FTP downloads per hour, by weekday and hour in your local time. Hover for details.</span>
+              <div id="heat-ftp-range"></div>
+            </div>
+            <div id="heat-ftp-map"></div>
+          </div>
+          <div class="panel" id="panel-heat-http">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem">
+              <span style="font-size:0.78rem;color:var(--text3)">Average HTTP downloads per hour, by weekday and hour in your local time. Hover for details.</span>
+              <div id="heat-http-range"></div>
+            </div>
+            <div id="heat-http-map"></div>
+          </div>
+
           <!-- ── All Users ── -->
           <div class="panel" id="panel-users">
             <div class="table-card">
@@ -595,6 +669,79 @@ tbody tr:hover td { background: var(--bg3); }
               <h3>About Trusted FTP Users</h3>
               <p>Each trusted user is chrooted to their own folder under <span class="mono" style="font-size:0.75rem;color:var(--teal)">FTP_BASE_PATH/&lt;home_folder&gt;</span> with full read/write access. They cannot navigate above that folder.</p>
               <p style="margin-top:0.5rem">Create the folder on the FTP server before the user first connects. Regular FTP users and anonymous users are unaffected.</p>
+            </div>
+          </div>
+
+          <!-- ── Private FTP Users ── -->
+          <div class="panel" id="panel-private">
+            <div class="table-card">
+              <div class="table-toolbar">
+                <input class="search-box" id="private-search" placeholder="Search username…" oninput="renderPrivate()">
+                <select class="filter-select" id="private-filter" onchange="renderPrivate()">
+                  <option value="all">All</option><option value="enabled">Active</option><option value="disabled">Disabled</option>
+                </select>
+                <span style="margin-left:auto;font-size:0.78rem;color:var(--text3)" id="private-count"></span>
+                <button class="btn btn-ghost btn-sm" onclick="showAddPrivateModal()">+ Add Private User</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Username</th><th>FTP Home Folder</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+                  <tbody id="private-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="detail-card" style="margin-top:1rem;font-size:0.8rem;color:var(--text3);line-height:1.7">
+              <h3>About Private FTP Users</h3>
+              <p>Each private user is chrooted to their own folder under <span class="mono" style="font-size:0.75rem;color:var(--green)" id="private-base-label">PRIVATE_FTP_BASE_PATH</span>/&lt;home_folder&gt; with full read/write access. This is a separate tree from the public FTP root and from Trusted users — private files are not visible to anyone else over FTP or HTTP, and never appear on the public dashboard.</p>
+              <p style="margin-top:0.5rem">The home folder is created automatically (mode 750) when the user is added. Deleting a user removes the login only — their folder and files stay on disk.</p>
+              <p style="margin-top:0.5rem">ProFTPd reloads automatically when users are added or removed (via the host's <span class="mono" style="font-size:0.75rem">ciosuseradd-proftpd-reload</span> unit) — no manual step needed.</p>
+            </div>
+          </div>
+
+          <!-- ── R/W Activity (trusted + private users) ── -->
+          <div class="panel" id="panel-activity">
+            <div id="act-backfill"></div>
+            <div class="table-card" style="margin-bottom:1rem">
+              <div class="table-toolbar">
+                <span style="font-size:0.78rem;color:var(--text3)">Per-user summary — trusted &amp; private users</span>
+                <select class="filter-select" id="act-sum-days" onchange="loadActivitySummary()" style="margin-left:auto">
+                  <option value="1">Last 24h</option><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="365">Last year</option><option value="3650">All time</option>
+                </select>
+              </div>
+              <div class="table-wrap"><table>
+                <thead><tr><th>User</th><th>Uploads</th><th>Downloads</th><th>Deleted</th><th>Folders +</th><th>Folders −</th><th>Renames</th><th>Failed</th><th>Uploaded</th><th>Downloaded</th><th>IPs</th><th>Last activity</th><th></th></tr></thead>
+                <tbody id="act-sum-tbody"><tr><td colspan="13" class="empty">Loading…</td></tr></tbody>
+              </table></div>
+            </div>
+            <div class="table-card">
+              <div class="log-filter-bar">
+                <label>User</label><select class="filter-select" id="act-f-user" onchange="loadActivity(1)"><option value="">All</option></select>
+                <label>Type</label><select class="filter-select" id="act-f-class" onchange="loadActivity(1)"><option value="">All</option><option value="trusted">Trusted</option><option value="private">Private</option></select>
+                <label>Action</label><select class="filter-select" id="act-f-action" onchange="loadActivity(1)">
+                  <option value="">All</option><option value="upload">Upload</option><option value="download">Download</option>
+                  <option value="delete">Delete file</option><option value="mkdir">Create folder</option><option value="rmdir">Delete folder</option>
+                  <option value="rename">Rename/move</option><option value="chmod">Chmod</option><option value="login">Login</option>
+                  <option value="upload,delete,mkdir,rmdir,rename,chmod">All changes (no downloads/logins)</option>
+                </select>
+                <label>Result</label><select class="filter-select" id="act-f-result" onchange="loadActivity(1)"><option value="">All</option><option value="ok">OK</option><option value="fail">Failed</option></select>
+                <label>IP</label><input type="text" id="act-f-ip" placeholder="IP…" style="width:110px" oninput="actDebounce()">
+                <label>Path</label><input type="text" id="act-f-path" placeholder="file or folder…" style="width:160px" oninput="actDebounce()">
+                <label>From</label><input type="date" id="act-f-from" onchange="loadActivity(1)">
+                <label>To</label><input type="date" id="act-f-to" onchange="loadActivity(1)">
+                <button class="btn btn-ghost btn-xs" onclick="clearActFilters()">Clear</button>
+                <button class="btn btn-ghost btn-xs" onclick="exportActivityCSV()">Export CSV</button>
+              </div>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Time</th><th>User</th><th>IP</th><th>Action</th><th>Path</th><th>Size</th><th>Result</th></tr></thead>
+                <tbody id="act-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+              </table></div>
+              <div class="log-pager">
+                <span id="act-pager-info">—</span>
+                <div class="pager-btns">
+                  <button class="btn btn-ghost btn-xs" id="act-prev" onclick="loadActivity(_actPage-1)">← Prev</button>
+                  <button class="btn btn-ghost btn-xs" id="act-next" onclick="loadActivity(_actPage+1)">Next →</button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1101,7 +1248,6 @@ tbody tr:hover td { background: var(--bg3); }
           <div class="panel" id="panel-ftp-live">
             <div class="live-bar">
               <span id="live-pill" class="live-pill paused"><span class="dot"></span><span id="live-pill-txt">Connecting</span></span>
-              <span id="live-updated">—</span>
               <span id="live-server" style="margin-left:auto"></span>
             </div>
             <div id="live-alert" class="alert err"></div>
@@ -1122,6 +1268,7 @@ tbody tr:hover td { background: var(--bg3); }
                   <option value="anon">Anonymous</option>
                   <option value="registered">Registered Users</option>
                   <option value="trusted">Trusted</option>
+                  <option value="private">Private</option>
                   <option value="other">Other / system</option>
                 </select>
                 <input class="search-box" id="live-search" placeholder="Search user, IP, file…" oninput="renderLive()" style="margin-left:auto">
@@ -1214,6 +1361,176 @@ tbody tr:hover td { background: var(--bg3); }
           </div><!-- /panel-db-status -->
 
           <!-- ── Security Threats ── -->
+          <!-- ── FTP Bans (anonymous idle / reconnect abuse) ── -->
+          <div class="panel" id="panel-ftpban">
+            <div id="fb-alerts"></div>
+            <div class="stats-row">
+              <div class="stat-card"><div class="stat-label">Active Bans</div><div class="stat-val" style="color:var(--red)" id="fb-s-active">—</div><div class="stat-sub" id="fb-s-active-sub"></div></div>
+              <div class="stat-card"><div class="stat-label">Mode</div><div class="stat-val" id="fb-s-mode">—</div><div class="stat-sub" id="fb-s-mode-sub"></div></div>
+              <div class="stat-card"><div class="stat-label">Bans 24h</div><div class="stat-val" id="fb-s-24h">—</div><div class="stat-sub" id="fb-s-7d"></div></div>
+              <div class="stat-card"><div class="stat-label">Watchlist</div><div class="stat-val" style="color:var(--yellow)" id="fb-s-watch">—</div><div class="stat-sub">IPs counting toward a ban</div></div>
+              <div class="stat-card"><div class="stat-label">Offender IPs 24h</div><div class="stat-val" id="fb-s-off">—</div><div class="stat-sub" id="fb-s-pkts"></div></div>
+            </div>
+            <div class="fb-tabs">
+              <button class="fb-tab active" id="fb-tab-active" onclick="fbTab('active')">Active Bans</button>
+              <button class="fb-tab" id="fb-tab-watch" onclick="fbTab('watch')">Watchlist</button>
+              <button class="fb-tab" id="fb-tab-whitelist" onclick="fbTab('whitelist')">Whitelist <span class="thr-tc" id="fb-tc-whitelist" style="background:rgba(16,185,129,0.2);color:var(--green)"></span></button>
+              <button class="fb-tab" id="fb-tab-offenders" onclick="fbTab('offenders')">Top Offenders</button>
+              <button class="fb-tab" id="fb-tab-history" onclick="fbTab('history')">History</button>
+              <button class="fb-tab" id="fb-tab-stats" onclick="fbTab('stats')">Charts</button>
+              <button class="fb-tab" id="fb-tab-settings" onclick="fbTab('settings')">Settings</button>
+              <span class="thr-tab-spacer"></span>
+              <button class="btn btn-ghost btn-sm" style="margin:0.3rem 0.4rem 0.3rem 0" onclick="fbRefresh(true)">↻ Refresh</button>
+              <button class="btn btn-danger btn-sm" style="margin:0.3rem 0" onclick="fbBanModal()">+ Ban IP</button>
+            </div>
+
+            <div class="fb-tp active" id="fb-tp-active">
+              <div class="table-card">
+                <div class="table-toolbar">
+                  <input class="search-box" id="fb-active-search" placeholder="Filter IP…" oninput="fbRenderActive()">
+                  <select class="filter-select" id="fb-active-src" onchange="fbRenderActive()">
+                    <option value="">All</option><option value="auto">Auto</option><option value="manual">Manual</option><option value="dry_run">Dry-run (not enforced)</option>
+                  </select>
+                  <span style="margin-left:auto;font-size:0.78rem;color:var(--text3)" id="fb-active-count"></span>
+                </div>
+                <div class="table-wrap"><table>
+                  <thead><tr><th>IP</th><th>Type</th><th>Reason</th><th>Banned</th><th>Expires</th><th>Blocked</th><th>By</th><th>Actions</th></tr></thead>
+                  <tbody id="fb-active-tbody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+                </table></div>
+              </div>
+            </div>
+
+            <div class="fb-tp" id="fb-tp-watch">
+              <div class="table-card">
+                <div class="table-toolbar"><span style="font-size:0.78rem;color:var(--text3)">Anonymous IPs currently counting toward a rule threshold (live, in-window counts)</span></div>
+                <div class="table-wrap"><table>
+                  <thead><tr><th>IP</th><th>Progress</th><th>Events in window</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody id="fb-watch-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+                </table></div>
+              </div>
+            </div>
+
+            <div class="fb-tp" id="fb-tp-offenders">
+              <div class="table-card">
+                <div class="table-toolbar">
+                  <select class="filter-select" id="fb-off-days" onchange="fbLoadOffenders()">
+                    <option value="1">Last 24h</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option>
+                  </select>
+                  <select class="filter-select" id="fb-off-sort" onchange="fbLoadOffenders()">
+                    <option value="total">Sort: total events</option><option value="bans">Sort: times banned</option>
+                    <option value="notransfer">Sort: no-transfer timeouts</option><option value="idle">Sort: idle timeouts</option>
+                    <option value="connect">Sort: anon logins</option><option value="aborted">Sort: aborted transfers</option>
+                  </select>
+                  <span style="margin-left:auto;font-size:0.78rem;color:var(--text3)">Anonymous sessions only</span>
+                </div>
+                <div class="table-wrap"><table>
+                  <thead><tr><th>IP</th><th>Anon logins</th><th>No-transfer t/o</th><th>Idle t/o</th><th>Aborted</th><th>Total</th><th>Bans</th><th>Last seen</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody id="fb-off-tbody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
+                </table></div>
+              </div>
+            </div>
+
+            <div class="fb-tp" id="fb-tp-history">
+              <div class="table-card">
+                <div class="table-toolbar">
+                  <input class="search-box" id="fb-hist-ip" placeholder="Filter IP…" oninput="clearTimeout(window._fbHistT);window._fbHistT=setTimeout(()=>fbLoadHistory(0),300)">
+                  <select class="filter-select" id="fb-hist-src" onchange="fbLoadHistory(0)">
+                    <option value="">All types</option><option value="auto">Auto</option><option value="manual">Manual</option><option value="dry_run">Dry-run</option>
+                  </select>
+                  <span style="margin-left:auto;font-size:0.78rem;color:var(--text3)" id="fb-hist-count"></span>
+                  <button class="btn btn-ghost btn-xs" id="fb-hist-prev" onclick="fbLoadHistory(_fbHistOff-100)">← Newer</button>
+                  <button class="btn btn-ghost btn-xs" id="fb-hist-next" onclick="fbLoadHistory(_fbHistOff+100)">Older →</button>
+                </div>
+                <div class="table-wrap"><table>
+                  <thead><tr><th>IP</th><th>Type</th><th>Reason</th><th>Banned</th><th>Ended</th><th>Duration</th><th>Ended by</th><th>Blocked</th></tr></thead>
+                  <tbody id="fb-hist-tbody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+                </table></div>
+              </div>
+            </div>
+
+            <div class="fb-tp" id="fb-tp-stats">
+              <div class="chart-card">
+                <h3>Bans per day
+                  <select class="filter-select" id="fb-chart-days" onchange="fbLoadCharts()">
+                    <option value="7">7 days</option><option value="30" selected>30 days</option><option value="90">90 days</option>
+                  </select>
+                </h3>
+                <div class="chart-wrap"><canvas id="fb-chart-bans"></canvas></div>
+              </div>
+              <div class="chart-card">
+                <h3>Anonymous abuse events per day</h3>
+                <div class="chart-wrap"><canvas id="fb-chart-events"></canvas></div>
+              </div>
+            </div>
+
+            <div class="fb-tp" id="fb-tp-whitelist">
+              <div class="detail-card" style="margin-bottom:1rem">
+                <h3>Whitelist an IP or Range</h3>
+                <p style="font-size:0.78rem;color:var(--text3);margin-top:0.4rem;line-height:1.6">Whitelisted IPs are never <b>auto</b>-banned by the rules, and adding one lifts any active auto ban it covers. Manual bans still apply. Applied by the ban daemon within a few seconds. This is separate from the Security Threats whitelist (admin portal).</p>
+                <div class="inline-edit" style="flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem">
+                  <input type="text" class="inline-input" id="fb-wl-ip" placeholder="IP or CIDR (e.g. 1.2.3.4 or 10.0.0.0/8)" style="min-width:220px;flex:1">
+                  <input type="text" class="inline-input" id="fb-wl-note" placeholder="Note (optional)" style="min-width:200px;flex:2">
+                  <button class="btn btn-success btn-sm" onclick="fbWlAddForm()">Whitelist</button>
+                </div>
+              </div>
+              <div class="table-card">
+                <div class="table-toolbar"><span style="font-size:0.78rem;color:var(--text3)" id="fb-wl-count"></span></div>
+                <div class="table-wrap"><table>
+                  <thead><tr><th>IP / Range</th><th>Note</th><th>Added</th><th>By</th><th>Actions</th></tr></thead>
+                  <tbody id="fb-wl-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+                </table></div>
+              </div>
+            </div>
+
+            <div class="fb-tp" id="fb-tp-settings">
+              <div class="detail-card fb-set">
+                <h3>Mode</h3>
+                <div class="row">
+                  <label style="display:flex;gap:0.5rem;align-items:center;font-size:0.85rem"><input type="radio" name="fb-mode" value="enforce" id="fb-mode-enforce"> <b>Enforce</b> — auto bans block the IP</label>
+                  <label style="display:flex;gap:0.5rem;align-items:center;font-size:0.85rem"><input type="radio" name="fb-mode" value="dry" id="fb-mode-dry"> <b>Dry run</b> — auto bans are only recorded ("would ban"), nothing is blocked</label>
+                </div>
+                <div class="field-hint" style="margin-top:-0.4rem;margin-bottom:1rem">Manual bans are always enforced. Rules only count <b>anonymous</b> sessions; registered, trusted and private users are never auto-banned.</div>
+
+                <h3>Rules</h3>
+                <div class="table-wrap" style="margin-bottom:1rem"><table class="fb-rules">
+                  <thead><tr><th>On</th><th>Rule</th><th>Events</th><th>Within (min)</th><th>Ban for (min)</th></tr></thead>
+                  <tbody id="fb-rules-tbody"></tbody>
+                </table></div>
+
+                <h3>Repeat offenders</h3>
+                <div class="row">
+                  <label style="display:flex;gap:0.5rem;align-items:center;font-size:0.85rem;min-width:180px"><input type="checkbox" id="fb-esc-on"> Escalate repeat bans</label>
+                  <div class="field"><label>Multiply ban length by</label><input type="number" step="0.5" min="1" max="10" id="fb-esc-mult"></div>
+                  <div class="field"><label>…per prior ban in the last (days)</label><input type="number" min="1" max="365" id="fb-esc-days"></div>
+                  <div class="field"><label>Max ban length (hours)</label><input type="number" min="1" id="fb-esc-max"></div>
+                </div>
+
+                <h3>Ban messages</h3>
+                <div class="field-hint" style="margin-bottom:0.75rem">What a banned client sees when it connects (sent as an FTP <span class="mono">421</span> reply, e.g. FileZilla shows <span class="mono">Response: 421 …</span>). Placeholders:
+                  <span class="mono">{remaining}</span> time left, <span class="mono">{expires}</span> end date/time, <span class="mono">{ip}</span> their IP, <span class="mono">{reason}</span> ban reason. Single line, max 300 characters.</div>
+                <div id="fb-msgs"></div>
+
+                <h3 style="margin-top:1rem">Whitelist</h3>
+                <div class="field-hint" style="margin-bottom:1rem">Managed on the <a href="#" onclick="fbTab('whitelist');return false">Whitelist</a> tab.</div>
+
+                <h3 style="margin-top:1rem">Advanced</h3>
+                <div class="row">
+                  <div class="field"><label>Anonymous FTP username(s)</label><input type="text" id="fb-anon-users" style="width:220px"><div class="field-hint">Comma-separated system user(s) anon logins map to</div></div>
+                  <div class="field"><label>Blocked ports</label><input type="text" id="fb-ports" style="width:220px"><div class="field-hint">FTP control port + PassivePorts range</div></div>
+                  <div class="field"><label>FTP control port</label><input type="number" min="1" max="65535" id="fb-cport"><div class="field-hint">Gets the ban message</div></div>
+                  <div class="field"><label>Message responder port</label><input type="number" min="1024" max="65535" id="fb-rport"><div class="field-hint">Local only; must be free</div></div>
+                  <div class="field"><label>Keep stats/history (days)</label><input type="number" min="1" max="3650" id="fb-retention"></div>
+                </div>
+                <div id="fb-set-alert" class="alert"></div>
+                <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.5rem">
+                  <button class="btn btn-primary" onclick="fbSaveSettings()">Save Settings</button>
+                  <button class="btn btn-ghost" onclick="fbLoadSettings()">Revert</button>
+                  <span style="font-size:0.75rem;color:var(--text3)" id="fb-set-meta"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="panel" id="panel-threats">
             <div class="stats-row">
               <div class="stat-card"><div class="stat-label">Incidents</div><div class="stat-val" id="thr-total">—</div></div>
@@ -1227,6 +1544,7 @@ tbody tr:hover td { background: var(--bg3); }
               <button class="thr-tab" id="thr-tab-banned-ips" onclick="switchThreatTab('banned-ips')">Banned IPs <span class="thr-tc" id="thr-tc-banned-ips"></span></button>
               <button class="thr-tab" id="thr-tab-banned-usernames" onclick="switchThreatTab('banned-usernames')">Banned Usernames <span class="thr-tc" id="thr-tc-banned-usernames"></span></button>
               <button class="thr-tab" id="thr-tab-multi" onclick="switchThreatTab('multi')">Multi-Account <span class="thr-tc" id="thr-tc-multi"></span></button>
+              <button class="thr-tab" id="thr-tab-whitelist" onclick="switchThreatTab('whitelist')">Whitelist <span class="thr-tc" id="thr-tc-whitelist" style="background:rgba(16,185,129,0.2);color:var(--green)"></span></button>
               <span class="thr-tab-spacer"></span>
               <button class="btn btn-ghost btn-sm" style="margin:0.3rem 0" onclick="loadThreats()">↻ Refresh</button>
             </div>
@@ -1307,6 +1625,30 @@ tbody tr:hover td { background: var(--bg3); }
                 </div>
               </div>
             </div>
+            <!-- Whitelist tab -->
+            <div class="thr-tp" id="thr-tp-whitelist">
+              <div class="detail-card" style="margin-bottom:1rem">
+                <h3>Whitelist an IP or Range</h3>
+                <p style="font-size:0.78rem;color:var(--text3);margin-top:0.4rem;line-height:1.6">Whitelisted IPs never trigger admin-portal intrusion warnings, account lockouts or automatic IP/username bans, and IP bans don't apply to them (existing bans in the range are removed). A wrong password still fails normally. This is separate from the FTP Bans whitelist.</p>
+                <div class="inline-edit" style="flex-wrap:wrap;gap:0.5rem;margin-top:0.75rem">
+                  <input type="text" class="inline-input" id="wl-ip-addr" placeholder="IP or CIDR (e.g. 1.2.3.4 or 10.0.0.0/8)" style="min-width:220px;flex:1">
+                  <input type="text" class="inline-input" id="wl-ip-notes" placeholder="Notes (optional)" style="min-width:200px;flex:2">
+                  <button class="btn btn-success btn-sm" onclick="whitelistIPManual()">Whitelist</button>
+                  <button class="btn btn-ghost btn-sm" id="wl-my-ip" onclick="whitelistMyIP()">+ My IP</button>
+                </div>
+              </div>
+              <div class="table-card">
+                <div class="table-toolbar">
+                  <span style="font-size:0.78rem;color:var(--text3)">Whitelisted IPs / Ranges</span>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>IP / Range</th><th>Notes</th><th>Added By</th><th>Date</th><th>Actions</th></tr></thead>
+                    <tbody id="whitelist-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
 
         </div><!-- /content -->
@@ -1332,6 +1674,10 @@ const siteReady = fetch(API + '/public/site', { cache: 'no-store' })
     document.querySelectorAll('[data-site="host"]').forEach(el => el.textContent = SITE.ftp_public_host);
     const hostRow = document.getElementById('site-host-row');
     if (hostRow) hostRow.style.display = SITE.ftp_public_host ? '' : 'none';
+    if (SITE.wrong_portal_url) {
+      const html = `Trying to get to ${esc(SITE.wrong_portal_name || 'a different site')}? Please go to <a href="${esc(SITE.wrong_portal_url)}">${esc(SITE.wrong_portal_url)}</a>`;
+      document.querySelectorAll('[data-wrong-portal]').forEach(el => el.innerHTML = html);
+    }
   })
   .catch(() => {});
 let allUsers = [];
@@ -1361,9 +1707,9 @@ function showAdminApp() {
 }
 
 var panelTitles = {
-  overview: 'General Overview',
-  dashboard: 'Dashboard', users: 'All Users', trusted: 'Trusted FTP Users', 'user-detail': 'User Detail',
-  audit: 'Audit Log', threats: 'Security Threats',
+  overview: 'General Overview', 'heat-ftp': 'Busiest Times — FTP', 'heat-http': 'Busiest Times — HTTP',
+  dashboard: 'Dashboard', users: 'All Users', trusted: 'Trusted FTP Users', private: 'Private FTP Users', activity: 'R/W Activity — Trusted & Private Users', 'user-detail': 'User Detail',
+  audit: 'Audit Log', threats: 'Security Threats', ftpban: 'FTP Bans',
   'ftp-live': 'Live FTP Sessions', 'ftp-dl': 'FTP Downloads', 'ftp-up': 'FTP Uploads', 'ftp-anon': 'FTP Anonymous Downloads',
   'http-dl': 'HTTP Downloads', 'http-anon': 'HTTP Anonymous Downloads',
   'ftp-stats': 'FTP Charts & Stats', 'http-stats': 'HTTP Charts & Stats',
@@ -1386,8 +1732,11 @@ function navTo(panel) {
   if (panel === 'dashboard') loadDashboard();
   if (panel === 'users')     loadUsers();
   if (panel === 'trusted')   loadTrusted();
+  if (panel === 'private')   loadPrivate();
+  if (panel === 'activity')  openActivity();
   if (panel === 'audit')     loadAudit();
   if (panel === 'threats')   loadThreats();
+  if (panel === 'ftpban')    fbOpen(); else fbClose();
   if (panel === 'ftp-dl')    { loadDlStats('ftp-dl', 'ftp', false); loadDl('ftp-dl', 'ftp', false, 1); }
   if (panel === 'ftp-up')    { loadDlStats('ftp-up', 'ftp', false); loadDl('ftp-up', 'ftp', false, 1); }
   if (panel === 'ftp-anon')  { loadDlStats('ftp-anon', 'ftp', true);  loadDl('ftp-anon', 'ftp', true, 1); }
@@ -1401,6 +1750,8 @@ function navTo(panel) {
     loadOverviewSystemSnapshot();
     loadMaxDays('overview', '');
   }
+  if (panel === 'heat-ftp')   openHeatPage('ftp');
+  if (panel === 'heat-http')  openHeatPage('http');
   if (panel === 'ftp-live')   startLive();
   if (panel === 'db-status')  loadDbStats();
   if (panel === 'settings')   loadSettings();
@@ -1417,8 +1768,13 @@ async function doLogin() {
       body: JSON.stringify({ username, password }),
     });
     const data = await res.json();
+    // Any rejected login: show the "wrong login page?" pointer (if configured).
+    document.getElementById('login-wrong-portal').classList.toggle('show', !res.ok && !!SITE.wrong_portal_url);
     if (res.ok) { tok = data.access_token; sessionStorage.setItem('admin_token', tok); showAdminApp(); }
-    else if (res.status === 403 && data.detail === 'first_warning') { document.getElementById('threat-overlay').classList.add('show'); }
+    else if (res.status === 403 && data.detail === 'first_warning') {
+      document.querySelector('#threat-overlay .wrong-portal').classList.toggle('show', !!SITE.wrong_portal_url);
+      document.getElementById('threat-overlay').classList.add('show');
+    }
     else if (res.status === 403 && data.detail === 'blocked') { showAlert('login-alert', 'err', 'Access denied — your IP address or username has been permanently banned.'); }
     else showAlert('login-alert', 'err', data.detail || 'Login failed');
   } catch(e) { showAlert('login-alert', 'err', 'Network error'); }
@@ -1502,6 +1858,8 @@ async function loadDashboard() {
     _setText('s-disabled', data.disabled);
     _setText('s-trusted',  data.trusted_total ?? '—');
     _setText('s-trusted-sub', data.trusted_enabled != null ? `${data.trusted_enabled} active` : '');
+    _setText('s-private',  data.private_total ?? '—');
+    _setText('s-private-sub', data.private_enabled != null ? `${data.private_enabled} active` : '');
     const badge = document.getElementById('nav-threats-badge');
     if (badge) {
       const n = data.unreviewed_threats || 0;
@@ -2028,6 +2386,23 @@ async function loadSourceStats(pid, source, days) {
   if (breakdownRes.status==='fulfilled' && breakdownRes.value.ok) {
     _renderSourceTopUsers(pid, breakdownRes.value.data, userSort, source);
   }
+}
+
+// ── Busiest Times pages (heatmap + range picker from static/heatmap.js) ─────
+var _heatPages = {};
+function openHeatPage(source) {
+  let p = _heatPages[source];
+  if (!p) {
+    const map = HeatmapUI.createMap(document.getElementById(`heat-${source}-map`), {
+      label: source.toUpperCase(), source, path: '/admin/logs/heatmap', fetchJson: path => api('GET', path),
+    });
+    const picker = HeatmapUI.createRangePicker(document.getElementById(`heat-${source}-range`), {
+      initial: '30d', onChange: (q, label) => map.load(q, label),
+    });
+    p = _heatPages[source] = { map, picker };
+  }
+  const c = p.picker.current();
+  p.map.load(c.query, c.label);
 }
 
 function _setStatCard(valId, trendId, metric, isBytes) {
@@ -2771,11 +3146,151 @@ function toast(msg, type='info') {
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),3500);
 }
 
+// ── R/W activity log (trusted + private users) ───────────────────────────────
+const ACT_LABELS = { upload:'Upload', download:'Download', delete:'Delete file', mkdir:'Create folder',
+                     rmdir:'Delete folder', rename:'Rename', chmod:'Chmod', login:'Login' };
+let _actPage = 1, _actTimer = null, _actUsersLoaded = false, _actPendingUser;
+
+async function openActivity(username) {
+  if (username === undefined && _actPendingUser !== undefined) { username = _actPendingUser; }
+  _actPendingUser = undefined;
+  if (!_actUsersLoaded) {
+    try {
+      const [t, p] = await Promise.all([api('GET', '/admin/trusted'), api('GET', '/admin/private')]);
+      const sel = document.getElementById('act-f-user');
+      const opts = [...(t.data.users || []).map(u => [u.username, 'trusted']), ...(p.data.users || []).map(u => [u.username, 'private'])]
+        .sort((a, b) => a[0].localeCompare(b[0]));
+      sel.innerHTML = '<option value="">All</option>' + opts.map(([u, c]) => `<option value="${esc(u)}">${esc(u)} (${c})</option>`).join('');
+      if (p.data.base_path) privateBase = p.data.base_path;
+      _actUsersLoaded = true;
+    } catch (e) { /* filter list is best-effort */ }
+  }
+  if (username !== undefined) {
+    clearActFilters(true);
+    document.getElementById('act-f-user').value = username;
+  }
+  loadActivitySummary();
+  loadActivity(1);
+}
+
+function openUserActivity(username) {
+  _actUsersLoaded = false;      // pick up users added since the panel was last opened
+  _actPendingUser = username;   // consumed by openActivity(), which navTo() calls
+  navTo('activity');
+}
+
+function _actParams() {
+  const p = new URLSearchParams();
+  const v = id => document.getElementById(id).value.trim();
+  if (v('act-f-user'))   p.set('username', v('act-f-user'));
+  if (v('act-f-class'))  p.set('user_class', v('act-f-class'));
+  if (v('act-f-action')) p.set('action', v('act-f-action'));
+  if (v('act-f-result')) p.set('result', v('act-f-result'));
+  if (v('act-f-ip'))     p.set('ip', v('act-f-ip'));
+  if (v('act-f-path'))   p.set('path', v('act-f-path'));
+  if (v('act-f-from'))   p.set('date_from', v('act-f-from') + 'T00:00:00');
+  if (v('act-f-to'))     p.set('date_to', v('act-f-to') + 'T23:59:59.999');
+  return p;
+}
+
+function _actPath(p) {
+  if (!p) return '—';
+  const pb = privateBase && privateBase !== 'PRIVATE_FTP_BASE_PATH' ? privateBase + '/' : '';
+  if (pb && p.startsWith(pb)) return p.slice(pb.length);
+  return stripFtpPath(p);
+}
+
+async function loadActivity(page) {
+  _actPage = Math.max(1, page || 1);
+  const p = _actParams(); p.set('page', _actPage); p.set('limit', 100);
+  const tb = document.getElementById('act-tbody');
+  try {
+    const {ok, data} = await api('GET', '/admin/activity?' + p);
+    if (!ok) { tb.innerHTML = `<tr><td colspan="7" class="empty">${esc(typeof data.detail === 'string' ? data.detail : 'Failed to load')}</td></tr>`; return; }
+    const bf = data.backfill || {};
+    document.getElementById('act-backfill').innerHTML = bf.done ? '' :
+      `<div class="fb-alert warn">Importing past activity from the FTP log (${esc(bf.progress)}) — older entries are still being added. New activity is recorded live.</div>`;
+    tb.innerHTML = data.rows.map(r => `
+      <tr>
+        <td class="muted small" style="white-space:nowrap">${fmtLogDate(r.logged_at)}</td>
+        <td><span class="mono">${esc(r.username)}</span> <span class="uclass ${esc(r.user_class)}">${esc(r.user_class)}</span></td>
+        <td class="mono small">${esc(r.ip_address)}</td>
+        <td><span class="act ${esc(r.action)}">${esc(ACT_LABELS[r.action] || r.action)}</span></td>
+        <td class="mono small" style="word-break:break-all">${r.action === 'rename' && r.path_from ? esc(_actPath(r.path_from)) + ' <span style="color:var(--text3)">→</span> ' + esc(_actPath(r.path)) : esc(_actPath(r.path))}</td>
+        <td class="mono small">${r.bytes != null ? fmtBytes(r.bytes) : ''}</td>
+        <td>${r.success ? '<span class="small" style="color:var(--green)">OK</span>' : `<span class="act-fail" title="FTP reply ${esc(r.status || '')}">Failed ${esc(r.status || '')}</span>`}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="empty">No activity matches these filters</td></tr>';
+    const from = data.total ? (_actPage - 1) * data.limit + 1 : 0, to = Math.min(_actPage * data.limit, data.total);
+    _setText('act-pager-info', data.total ? `${fmtNum(from)}–${fmtNum(to)} of ${fmtNum(data.total)}` : '0 entries');
+    document.getElementById('act-prev').disabled = _actPage <= 1;
+    document.getElementById('act-next').disabled = to >= data.total;
+  } catch (e) { tb.innerHTML = '<tr><td colspan="7" class="empty">Failed to load</td></tr>'; }
+}
+
+async function loadActivitySummary() {
+  const days = document.getElementById('act-sum-days').value;
+  const tb = document.getElementById('act-sum-tbody');
+  try {
+    const {ok, data} = await api('GET', `/admin/activity/summary?days=${days}`);
+    if (!ok) { tb.innerHTML = '<tr><td colspan="13" class="empty">Failed to load</td></tr>'; return; }
+    const n = v => v ? fmtNum(v) : '<span style="color:var(--text3)">0</span>';
+    tb.innerHTML = data.map(u => `
+      <tr>
+        <td><span class="mono">${esc(u.username)}</span> <span class="uclass ${esc(u.user_class)}">${esc(u.user_class)}</span></td>
+        <td class="mono small">${n(u.upload)}</td><td class="mono small">${n(u.download)}</td><td class="mono small">${n(u.delete)}</td>
+        <td class="mono small">${n(u.mkdir)}</td><td class="mono small">${n(u.rmdir)}</td><td class="mono small">${n(u.rename)}</td>
+        <td class="mono small">${u.failed ? `<span style="color:var(--red)">${fmtNum(u.failed)}</span>` : n(0)}</td>
+        <td class="mono small">${fmtBytes(u.bytes_up)}</td><td class="mono small">${fmtBytes(u.bytes_down)}</td>
+        <td class="mono small">${fmtNum(u.ips)}</td>
+        <td class="muted small">${fmtDate(u.last_seen)}</td>
+        <td><button class="btn btn-ghost btn-xs" onclick="openActivity('${esc(u.username)}')">View log</button></td>
+      </tr>`).join('') || '<tr><td colspan="13" class="empty">No activity in this period</td></tr>';
+  } catch (e) { tb.innerHTML = '<tr><td colspan="13" class="empty">Failed to load</td></tr>'; }
+}
+
+function actDebounce() { clearTimeout(_actTimer); _actTimer = setTimeout(() => loadActivity(1), 350); }
+
+function clearActFilters(noReload) {
+  ['act-f-user', 'act-f-class', 'act-f-action', 'act-f-result'].forEach(id => document.getElementById(id).value = '');
+  ['act-f-ip', 'act-f-path', 'act-f-from', 'act-f-to'].forEach(id => document.getElementById(id).value = '');
+  if (!noReload) loadActivity(1);
+}
+
+function exportActivityCSV() {
+  fetch(`${API}/admin/activity/export?${_actParams()}`, {headers: {'Authorization': 'Bearer ' + tok}})
+    .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+    .then(blob => {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ftp_activity.csv'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }).catch(() => toast('Export failed', 'err'));
+}
+
+// ── Home folder sizes (Trusted + Private) ─────────────────────────────────────
+// Loaded after the table renders so a slow folder walk never delays the list.
+let trustedSizes = {}, privateSizes = {};
+
+function _sizeLabel(sz) {
+  if (!sz) return '…';
+  if (!sz.exists) return 'no folder';
+  return `${fmtBytes(sz.bytes)} · ${fmtNum(sz.files)} file${sz.files!==1?'s':''}`;
+}
+
+async function loadFolderSizes(kind) {
+  try {
+    const {ok,data} = await api('GET', `/admin/folder-sizes/${kind}`);
+    if (!ok) return;
+    if (kind==='trusted') trustedSizes = data; else privateSizes = data;
+    document.querySelectorAll(`[data-size-${kind}]`).forEach(el => {
+      el.textContent = _sizeLabel(data[el.getAttribute(`data-size-${kind}`)]);
+    });
+  } catch(e) { /* sizes are best-effort */ }
+}
+
 // ── Trusted FTP Users ─────────────────────────────────────────────────────────
 let allTrusted = [];
 
 async function loadTrusted() {
-  try { const {data} = await api('GET','/admin/trusted'); allTrusted = data.users; renderTrusted(); }
+  try { const {data} = await api('GET','/admin/trusted'); allTrusted = data.users; renderTrusted(); loadFolderSizes('trusted'); }
   catch(e) { toast('Failed to load trusted users','err'); }
 }
 
@@ -2789,13 +3304,14 @@ function renderTrusted() {
   document.getElementById('trusted-count').textContent = `${users.length} user${users.length!==1?'s':''}`;
   document.getElementById('trusted-tbody').innerHTML = users.map(u => `
     <tr>
-      <td><span class="mono">${esc(u.username)}</span>${u.notes?`<span style="font-size:0.65rem;color:var(--text3);margin-left:0.4rem" title="${esc(u.notes)}">📝</span>`:''}</td>
+      <td><span class="mono">${esc(u.username)}</span>${u.notes?`<span style="font-size:0.65rem;color:var(--text3);margin-left:0.4rem" title="${esc(u.notes)}">📝</span>`:''}<span class="small" style="color:var(--text3);margin-left:0.5rem" data-size-trusted="${esc(u.username)}">${_sizeLabel(trustedSizes[u.username])}</span></td>
       <td><span class="mono small" style="color:var(--teal)">${esc(u.ftp_home_dir)}</span></td>
       <td><span class="badge ${u.enabled?'badge-on':'badge-off'}">${u.enabled?'Active':'Disabled'}</span></td>
       <td class="muted small">${fmtDate(u.created_at)}</td>
       <td><div class="action-row">
         <button class="btn btn-ghost btn-xs" onclick="showTrustedPassModal('${u.id}','${esc(u.username)}')">Password</button>
         <button class="btn btn-ghost btn-xs" onclick="showTrustedNotesModal('${u.id}')">Notes</button>
+        <button class="btn btn-ghost btn-xs" onclick="openUserActivity('${esc(u.username)}')">Activity</button>
         <button class="btn btn-ghost btn-xs" style="color:var(--teal);border-color:rgba(94,234,212,0.3)" onclick="fixTrustedPerms('${u.id}','${esc(u.username)}','${esc(u.ftp_home_dir)}')">Fix Perms</button>
         <button class="btn btn-xs ${u.enabled?'btn-danger':'btn-success'}" onclick="quickToggleTrusted('${u.id}','${esc(u.username)}',${u.enabled})">${u.enabled?'Disable':'Enable'}</button>
         <button class="btn btn-xs" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);color:var(--red)" onclick="deleteTrusted('${u.id}','${esc(u.username)}')">Delete</button>
@@ -2943,6 +3459,643 @@ async function doTrustedNotes(id) {
   } catch(e) { toast('Request failed','err'); }
 }
 
+// ── Private FTP Users ─────────────────────────────────────────────────────────
+// Same shape as Trusted, but under PRIVATE_FTP_BASE_PATH; the backend creates the folder.
+let allPrivate = [];
+let privateBase = 'PRIVATE_FTP_BASE_PATH';
+
+async function loadPrivate() {
+  try {
+    const {data} = await api('GET','/admin/private');
+    allPrivate = data.users; privateBase = data.base_path || privateBase;
+    _setText('private-base-label', privateBase);
+    renderPrivate();
+    loadFolderSizes('private');
+  }
+  catch(e) { toast('Failed to load private users','err'); }
+}
+
+function renderPrivate() {
+  const q = (document.getElementById('private-search')?.value||'').toLowerCase();
+  const f = document.getElementById('private-filter')?.value||'all';
+  let users = allPrivate;
+  if (f==='enabled')  users = users.filter(u=>u.enabled);
+  if (f==='disabled') users = users.filter(u=>!u.enabled);
+  if (q) users = users.filter(u=>u.username.toLowerCase().includes(q));
+  document.getElementById('private-count').textContent = `${users.length} user${users.length!==1?'s':''}`;
+  document.getElementById('private-tbody').innerHTML = users.map(u => `
+    <tr>
+      <td><span class="mono">${esc(u.username)}</span>${u.notes?`<span style="font-size:0.65rem;color:var(--text3);margin-left:0.4rem" title="${esc(u.notes)}">📝</span>`:''}<span class="small" style="color:var(--text3);margin-left:0.5rem" data-size-private="${esc(u.username)}">${_sizeLabel(privateSizes[u.username])}</span></td>
+      <td><span class="mono small" style="color:var(--green)">${esc(u.ftp_home_dir)}</span></td>
+      <td><span class="badge ${u.enabled?'badge-on':'badge-off'}">${u.enabled?'Active':'Disabled'}</span></td>
+      <td class="muted small">${fmtDate(u.created_at)}</td>
+      <td><div class="action-row">
+        <button class="btn btn-ghost btn-xs" onclick="showPrivatePassModal('${u.id}','${esc(u.username)}')">Password</button>
+        <button class="btn btn-ghost btn-xs" onclick="showPrivateNotesModal('${u.id}')">Notes</button>
+        <button class="btn btn-ghost btn-xs" onclick="openUserActivity('${esc(u.username)}')">Activity</button>
+        <button class="btn btn-ghost btn-xs" style="color:var(--teal);border-color:rgba(94,234,212,0.3)" onclick="fixPrivatePerms('${u.id}','${esc(u.username)}','${esc(u.ftp_home_dir)}')">Fix Perms</button>
+        <button class="btn btn-xs ${u.enabled?'btn-danger':'btn-success'}" onclick="quickTogglePrivate('${u.id}','${esc(u.username)}',${u.enabled})">${u.enabled?'Disable':'Enable'}</button>
+        <button class="btn btn-xs" style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);color:var(--red)" onclick="deletePrivate('${u.id}','${esc(u.username)}')">Delete</button>
+      </div></td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" class="empty">No private users yet — click "+ Add Private User" to create one</td></tr>';
+}
+
+async function quickTogglePrivate(id, username, enabled) {
+  if (!confirm(`${enabled?'Disable':'Enable'} private account "${username}"?`)) return;
+  try { const {ok,data}=await api('PUT',`/admin/private/${id}/toggle`); toast(data.message,ok?'ok':'err'); if(ok){loadPrivate();loadDashboard();} }
+  catch(e) { toast('Request failed','err'); }
+}
+
+async function deletePrivate(id, username) {
+  if (!confirm(`Delete private user "${username}"?\n\nThe login is removed; their folder and files are kept on disk.`)) return;
+  try { const {ok,data}=await api('DELETE',`/admin/private/${id}`); toast(data.message,ok?'ok':'err'); if(ok){loadPrivate();loadDashboard();} }
+  catch(e) { toast('Request failed','err'); }
+}
+
+async function fixPrivatePerms(id, username, homeDir) {
+  if (!confirm(`Fix folder permissions for "${username}"?\n\nThis will chown and chmod the folder:\n  ${homeDir}\n\nSets the owner to FTP_UID:PRIVATE_FTP_GID, folders 750, files 640.`)) return;
+  try {
+    const {ok,data} = await api('POST', `/admin/private/${id}/fix-permissions`);
+    toast(data.message, ok ? 'ok' : 'err');
+  } catch(e) { toast('Request failed','err'); }
+}
+
+function showAddPrivateModal() {
+  let m = document.getElementById('add-private-modal');
+  if (!m) {
+    m = document.createElement('div');
+    m.id = 'add-private-modal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000';
+    m.innerHTML = `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.75rem;width:100%;max-width:420px;">
+        <h2 style="font-size:0.95rem;font-weight:600;margin-bottom:0.35rem">Add Private FTP User</h2>
+        <p style="font-size:0.78rem;color:var(--text3);margin-bottom:1.25rem">Full read/write access, chrooted to their own folder under the private FTP base path.</p>
+        <div id="add-private-alert" class="alert"></div>
+        <div class="field"><label>Username</label>${_modalInput('ap-user','3-32 chars, letters/numbers/_')}</div>
+        <div class="field"><label>Password</label>${_modalInput('ap-pass','Min 8 characters','password')}</div>
+        <div class="field">
+          <label>Home Folder <span style="color:var(--text3)">(optional)</span></label>
+          ${_modalInput('ap-home','Defaults to the username')}
+          <div class="field-hint">Relative path under ${esc(privateBase)} — created automatically.</div>
+        </div>
+        <div class="field"><label>Notes <span style="color:var(--text3)">(optional)</span></label>${_modalInput('ap-notes','Internal notes…')}</div>
+        <div style="display:flex;gap:0.5rem;margin-top:1rem">
+          <button class="btn btn-primary" style="flex:1" onclick="doAddPrivate()">Create Private User</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('add-private-modal').remove()">Cancel</button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', e => { if(e.target===m) m.remove(); });
+  }
+  m.style.display = 'flex';
+}
+
+async function doAddPrivate() {
+  const username     = document.getElementById('ap-user').value.trim();
+  const password     = document.getElementById('ap-pass').value;
+  const ftp_home_dir = document.getElementById('ap-home').value.trim();
+  const notes        = document.getElementById('ap-notes').value.trim();
+  if (!username||!password) { showAlert('add-private-alert','err','Username and password are required'); return; }
+  try {
+    const body = {username, password};
+    if (ftp_home_dir) body.ftp_home_dir = ftp_home_dir;
+    if (notes) body.notes = notes;
+    const {ok,data} = await api('POST','/admin/private',body);
+    if (ok) {
+      toast(`Private user ${data.username} created`,'ok');
+      document.getElementById('add-private-modal').remove();
+      loadPrivate(); loadDashboard();
+    } else {
+      const msg = typeof data.detail==='string'?data.detail:data.detail?.[0]?.msg||'Error';
+      showAlert('add-private-alert','err',msg);
+    }
+  } catch(e) { showAlert('add-private-alert','err','Request failed'); }
+}
+
+function showPrivatePassModal(id, username) {
+  let m = document.getElementById('private-pass-modal');
+  if (m) m.remove();
+  m = document.createElement('div');
+  m.id = 'private-pass-modal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000';
+  m.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.75rem;width:100%;max-width:360px;">
+      <h2 style="font-size:0.95rem;font-weight:600;margin-bottom:1.25rem">Change Password — ${esc(username)}</h2>
+      <div id="private-pass-alert" class="alert"></div>
+      <div class="field">${_modalInput('pp-pass','New password (min 8 chars)','password')}</div>
+      <div class="field">${_modalInput('pp-conf','Confirm new password','password')}</div>
+      <div style="display:flex;gap:0.5rem;margin-top:1rem">
+        <button class="btn btn-primary" style="flex:1" onclick="doPrivatePass('${id}')">Update Password</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('private-pass-modal').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if(e.target===m) m.remove(); });
+}
+
+async function doPrivatePass(id) {
+  const password = document.getElementById('pp-pass').value;
+  const confirm  = document.getElementById('pp-conf').value;
+  if (!password) { showAlert('private-pass-alert','err','Password cannot be empty'); return; }
+  if (password.length<8) { showAlert('private-pass-alert','err','Password must be at least 8 characters'); return; }
+  if (password!==confirm) { showAlert('private-pass-alert','err','Passwords do not match'); return; }
+  try {
+    const {ok,data} = await api('PUT',`/admin/private/${id}/password`,{password,confirm_password:confirm});
+    toast(data.message||data.detail, ok?'ok':'err');
+    if (ok) document.getElementById('private-pass-modal').remove();
+  } catch(e) { toast('Request failed','err'); }
+}
+
+function showPrivateNotesModal(id) {
+  const u = allPrivate.find(u=>u.id===id);
+  if (!u) return;
+  let m = document.getElementById('private-notes-modal');
+  if (m) m.remove();
+  m = document.createElement('div');
+  m.id = 'private-notes-modal';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000';
+  m.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.75rem;width:100%;max-width:400px;">
+      <h2 style="font-size:0.95rem;font-weight:600;margin-bottom:1.25rem">Notes — ${esc(u.username)}</h2>
+      <textarea id="tn-notes" rows="4" style="width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--sans);font-size:0.85rem;padding:0.6rem 0.85rem;border-radius:var(--radius);outline:none;resize:vertical">${esc(u.notes||'')}</textarea>
+      <div style="display:flex;gap:0.5rem;margin-top:1rem">
+        <button class="btn btn-primary" style="flex:1" onclick="doPrivateNotes('${id}')">Save Notes</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('private-notes-modal').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if(e.target===m) m.remove(); });
+}
+
+async function doPrivateNotes(id) {
+  const notes = document.getElementById('pn-notes').value;
+  try {
+    const {ok,data} = await api('PUT',`/admin/private/${id}/notes`,{notes});
+    toast(data.message, ok?'ok':'err');
+    if (ok) { document.getElementById('private-notes-modal').remove(); loadPrivate(); }
+  } catch(e) { toast('Request failed','err'); }
+}
+
+// ── FTP Bans (anonymous idle / reconnect abuse) ───────────────────────────────
+// Detection + nftables enforcement run on the FTP host (ciosuseradd-ftpban);
+// these views read/write its DB through /admin/ftpban/*. Changes apply in ~2s.
+const FB_EVENTS = {
+  notransfer: { label:'No-transfer timeouts', short:'no-xfer', color:'#f97316',
+                hint:'Anonymous login that never transferred anything and was kicked by TimeoutNoTransfer (idle squatters)' },
+  idle:       { label:'Idle timeouts',        short:'idle',    color:'#a78bfa',
+                hint:'Anonymous session kicked by TimeoutIdle' },
+  connect:    { label:'Anonymous logins',     short:'logins',  color:'#2dd4bf',
+                hint:'Successful anonymous logins — catches reconnect storms and abort loops' },
+  aborted:    { label:'Aborted transfers',    short:'aborted', color:'#94a3b8',
+                hint:'Downloads/uploads dropped mid-transfer (426)' },
+};
+const FB_MSG_TYPES = {
+  notransfer: 'Auto ban — no-transfer timeouts', idle: 'Auto ban — idle timeouts',
+  connect: 'Auto ban — too many logins', aborted: 'Auto ban — aborted transfers', manual: 'Manual ban',
+};
+function _fbPreview(t) {
+  const sample = {remaining: '47 minutes', expires: '2026-10-12 14:05 EDT', ip: '203.0.113.7', reason: '9 notransfer events in 30 min'};
+  return '421 ' + String(t || '').replace(/\{(remaining|expires|ip|reason)\}/g, (_, k) => sample[k]).replace(/\s+/g, ' ').trim();
+}
+const FB_DURATIONS = [['15','15 minutes'],['60','1 hour'],['360','6 hours'],['1440','24 hours'],
+                      ['10080','7 days'],['43200','30 days'],['','Permanent'],['custom','Custom (minutes)…']];
+let _fbTab = 'active', _fbTimer = null, _fbActive = [], _fbSkew = 0, _fbHistOff = 0, _fbCharts = {};
+
+function fbOpen() {
+  fbRefresh(true);
+  clearInterval(_fbTimer);
+  _fbTimer = setInterval(() => { if (!document.hidden) fbRefresh(false); }, 10000);
+}
+function fbClose() { clearInterval(_fbTimer); _fbTimer = null; }
+
+function fbTab(t) {
+  _fbTab = t;
+  document.querySelectorAll('.fb-tab').forEach(b => b.classList.toggle('active', b.id === 'fb-tab-' + t));
+  document.querySelectorAll('.fb-tp').forEach(p => p.classList.toggle('active', p.id === 'fb-tp-' + t));
+  fbLoadTab(t, true);
+}
+
+async function fbRefresh(full) {
+  await fbLoadStatus();
+  fbLoadTab(_fbTab, full);
+}
+
+function fbLoadTab(t, full) {
+  if (t === 'active')    fbLoadActive();
+  if (t === 'watch')     fbLoadWatch();
+  if (t === 'offenders') fbLoadOffenders();
+  if (t === 'history' && full)  fbLoadHistory(_fbHistOff);
+  if (t === 'stats' && full)    fbLoadCharts();
+  if (t === 'whitelist' && full) fbLoadWhitelist();
+  if (t === 'settings' && full) fbLoadSettings();   // never clobber unsaved edits on auto-refresh
+}
+
+function _fbErr(data) { return typeof data?.detail === 'string' ? data.detail : data?.detail?.[0]?.msg || 'Request failed'; }
+function _fbTs(epoch) { return epoch ? fmtDate(epoch * 1000) : '—'; }
+function _fbNow() { return Date.now() / 1000 - _fbSkew; }
+function _fbType(b) {
+  if (b.dry_run) return `<span class="ban-source ban-dry" title="Dry run — recorded, not enforced">dry-run · ${esc(FB_EVENTS[b.rule]?.short || b.rule || '')}</span>`;
+  if (b.source === 'auto') return `<span class="ban-source ban-auto" title="${esc(FB_EVENTS[b.rule]?.label || '')}">auto · ${esc(FB_EVENTS[b.rule]?.short || b.rule || '')}</span>`;
+  return '<span class="ban-source ban-admin">manual</span>';
+}
+function _fbIp(ip) { return `<span class="mono fb-link" onclick="fbIpModal('${esc(ip)}')">${esc(ip)}</span>`; }
+
+// ── status ──
+async function fbLoadStatus() {
+  const box = document.getElementById('fb-alerts');
+  try {
+    const [st, wl] = await Promise.all([api('GET', '/admin/ftpban/status'), api('GET', '/admin/ftpban/watchlist')]);
+    if (!st.ok) { box.innerHTML = `<div class="fb-alert err">${esc(_fbErr(st.data))}</div>`; return; }
+    const d = st.data, alerts = [], wd = d.watchdog || {};
+    if (wd.state === 'failopen') alerts.push(['err', `<b>FAILED OPEN — no IPs are being blocked.</b> The watchdog could not keep the ban daemon healthy and removed all firewall bans so FTP keeps working for everyone. Reason: <span class="mono">${esc(wd.reason || '')}</span> (since ${_fbTs(wd.failopen_since)}). It retries automatically every 10 min. <button class="btn btn-danger btn-xs" style="margin-left:0.5rem" onclick="fbWatchdogRetry()">Retry now</button>`]);
+    else if (wd.state === 'disabled') alerts.push(['warn', 'The ban daemon is disabled on the FTP host (<span class="mono">systemctl enable --now ciosuseradd-ftpban</span> to turn it back on) — no bans are enforced.']);
+    else if (!d.daemon_ok) alerts.push(['err', `The ban daemon on the FTP host isn't responding (last heartbeat ${d.heartbeat_age_s != null ? fmtDur(d.heartbeat_age_s * 1000) + ' ago' : 'never'}) — new bans, unbans and expiries are not being applied. Check <span class="mono">systemctl status ciosuseradd-ftpban</span>.`]);
+    if (d.firewall && d.firewall.ok === false) alerts.push(['err', `Firewall sync failing: <span class="mono">${esc(d.firewall.error || '')}</span>`]);
+    if (d.daemon_ok && d.firewall && d.firewall.responder_ok === false) alerts.push(['warn', `Ban-message responder is down — banned clients get a plain connection reset instead of their message. <span class="mono">${esc(d.firewall.responder_error || '')}</span>`]);
+    if (!d.enforce) alerts.push(['warn', '<b>Dry run mode</b> — auto bans are recorded as "would ban" but nothing is blocked. Manual bans are still enforced. Switch to Enforce under Settings.']);
+    box.innerHTML = alerts.map(([k, m]) => `<div class="fb-alert ${k}">${m}</div>`).join('');
+    _setText('fb-s-active', d.active);
+    _setText('fb-s-active-sub', `${d.active_auto} auto · ${d.active_manual} manual` + (d.active_dry_run ? ` · ${d.active_dry_run} dry-run` : ''));
+    const mode = document.getElementById('fb-s-mode');
+    mode.textContent = d.enforce ? 'Enforce' : 'Dry run';
+    mode.style.color = d.enforce ? 'var(--green)' : 'var(--yellow)';
+    const wdAge = wd.checked_at ? Math.round(Date.now() / 1000 - _fbSkew - wd.checked_at) : null;
+    if (wd.state === 'failopen' || wd.state === 'disabled') { mode.textContent = 'Fail-open'; mode.style.color = 'var(--red)'; }
+    _setText('fb-s-mode-sub', (d.daemon_ok ? 'daemon OK' : 'daemon not responding') +
+      (wd.state ? ` · watchdog ${wd.state === 'ok' ? 'OK' : wd.state}${wdAge != null && wdAge > 120 ? ` (last run ${fmtDur(wdAge * 1000)} ago!)` : ''}` : ' · watchdog not installed'));
+    _setText('fb-s-24h', d.bans_24h);
+    _setText('fb-s-7d', `${d.bans_7d} in 7 days`);
+    _setText('fb-s-off', d.offender_ips_24h);
+    _setText('fb-s-pkts', `${fmtNum(d.blocked_packets)} packets blocked (active)`);
+    const badge = document.getElementById('nav-ftpban-badge');
+    if (badge) { badge.textContent = d.active; badge.style.display = d.active ? '' : 'none'; }
+    if (wl.ok) { _fbWatch = wl.data; _setText('fb-s-watch', wl.data.filter(w => !w.banned).length); }
+  } catch (e) { box.innerHTML = '<div class="fb-alert err">Could not reach the ban API</div>'; }
+}
+
+async function fbWatchdogRetry() {
+  const {ok, data} = await api('POST', '/admin/ftpban/watchdog/retry');
+  toast(ok ? data.message : _fbErr(data), ok ? 'ok' : 'err');
+}
+
+// ── active ──
+async function fbLoadActive() {
+  const {ok, data} = await api('GET', '/admin/ftpban/bans?state=active&limit=500');
+  if (!ok) { document.getElementById('fb-active-tbody').innerHTML = `<tr><td colspan="8" class="empty">${esc(_fbErr(data))}</td></tr>`; return; }
+  _fbSkew = Date.now() / 1000 - data.now;
+  _fbActive = data.bans;
+  fbRenderActive();
+}
+
+function fbRenderActive() {
+  const q = (document.getElementById('fb-active-search')?.value || '').trim().toLowerCase();
+  const src = document.getElementById('fb-active-src')?.value || '';
+  let rows = _fbActive;
+  if (q) rows = rows.filter(b => b.ip.toLowerCase().includes(q));
+  if (src === 'dry_run') rows = rows.filter(b => b.dry_run);
+  else if (src) rows = rows.filter(b => !b.dry_run && b.source === src);
+  _setText('fb-active-count', `${rows.length} ban${rows.length !== 1 ? 's' : ''}`);
+  const now = _fbNow();
+  document.getElementById('fb-active-tbody').innerHTML = rows.map(b => `
+    <tr>
+      <td>${_fbIp(b.ip)}</td>
+      <td>${_fbType(b)}</td>
+      <td class="small">${esc(b.reason || '—')}</td>
+      <td class="muted small">${_fbTs(b.created_at)}</td>
+      <td class="small">${b.expires_at ? fmtDur(Math.max(0, b.expires_at - now) * 1000) + ' left' : '<b style="color:var(--red)">Permanent</b>'}</td>
+      <td class="mono small">${b.dry_run ? '—' : fmtNum(b.blocked_packets)}</td>
+      <td class="muted small">${esc(b.created_by || '')}</td>
+      <td><div class="action-row">
+        ${b.dry_run ? `<button class="btn btn-danger btn-xs" onclick="fbDurModal(${b.id},'${esc(b.ip)}',true)">Enforce</button>` : ''}
+        <button class="btn btn-ghost btn-xs" onclick="fbDurModal(${b.id},'${esc(b.ip)}',false)">Duration</button>
+        <button class="btn btn-success btn-xs" onclick="fbUnban(${b.id},'${esc(b.ip)}',${b.dry_run})">${b.dry_run ? 'Dismiss' : 'Unban'}</button>
+        ${b.source === 'auto' ? `<button class="btn btn-ghost btn-xs" title="Whitelist this IP and lift the ban" onclick="fbWlQuick('${esc(b.ip)}')">Whitelist</button>` : ''}
+      </div></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="empty">No active bans</td></tr>';
+}
+
+async function fbUnban(id, ip, dry) {
+  if (!confirm(dry ? `Dismiss the dry-run entry for ${ip}?` : `Unban ${ip}? It is unblocked within a few seconds.`)) return;
+  const {ok, data} = await api('DELETE', `/admin/ftpban/bans/${id}`);
+  toast(ok ? data.message : _fbErr(data), ok ? 'ok' : 'err');
+  if (ok) fbRefresh(true);
+}
+
+async function fbUnbanIp(ip) {
+  if (!confirm(`Unban ${ip}?`)) return;
+  const {ok, data} = await api('POST', '/admin/ftpban/unban-ip', {ip});
+  toast(ok ? data.message : _fbErr(data), ok ? 'ok' : 'err');
+  if (ok) { fbRefresh(true); document.getElementById('fb-ip-modal')?.remove(); }
+}
+
+// ── watchlist ──
+let _fbWatch = [];
+async function fbLoadWatch() {
+  const {ok, data} = await api('GET', '/admin/ftpban/watchlist');
+  if (ok) _fbWatch = data;
+  document.getElementById('fb-watch-tbody').innerHTML = _fbWatch.map(w => {
+    const pct = Math.min(100, Math.round(w.ratio * 100));
+    return `<tr>
+      <td>${_fbIp(w.ip)}</td>
+      <td><div style="display:flex;align-items:center;gap:0.5rem"><div class="fb-meter"><div class="${pct >= 80 ? 'hot' : ''}" style="width:${pct}%"></div></div><span class="mono small">${pct}%</span></div></td>
+      <td>${w.events.map(e => `<span class="fb-ev" title="${esc(FB_EVENTS[e.event]?.hint || '')}">${esc(FB_EVENTS[e.event]?.short || e.event)} ${e.count}/${e.threshold} · ${e.window_min}m</span>`).join('')}</td>
+      <td>${w.banned ? '<span class="badge badge-off">Banned</span>' : w.whitelisted ? '<span class="badge badge-on" title="Counts toward the rules but is never auto-banned">whitelisted</span>' : '<span class="muted small">watching</span>'}</td>
+      <td><div class="action-row">${w.banned ? `<button class="btn btn-success btn-xs" onclick="fbUnbanIp('${esc(w.ip)}')">Unban</button>` : `<button class="btn btn-danger btn-xs" onclick="fbBanModal('${esc(w.ip)}','Watchlist: manual ban')">Ban now</button>`}
+        ${w.whitelisted ? '' : `<button class="btn btn-ghost btn-xs" onclick="fbWlQuick('${esc(w.ip)}')">Whitelist</button>`}</div></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="5" class="empty">Nobody is close to a threshold right now</td></tr>';
+}
+
+// ── offenders ──
+async function fbLoadOffenders() {
+  const days = document.getElementById('fb-off-days').value, sort = document.getElementById('fb-off-sort').value;
+  const {ok, data} = await api('GET', `/admin/ftpban/offenders?days=${days}&sort=${sort}&limit=100`);
+  const tb = document.getElementById('fb-off-tbody');
+  if (!ok) { tb.innerHTML = `<tr><td colspan="10" class="empty">${esc(_fbErr(data))}</td></tr>`; return; }
+  tb.innerHTML = data.map(o => `
+    <tr>
+      <td>${_fbIp(o.ip)}</td>
+      <td class="mono small">${fmtNum(o.connect)}</td>
+      <td class="mono small">${fmtNum(o.notransfer)}</td>
+      <td class="mono small">${fmtNum(o.idle)}</td>
+      <td class="mono small">${fmtNum(o.aborted)}</td>
+      <td class="mono small"><b>${fmtNum(o.total)}</b></td>
+      <td class="mono small">${fmtNum(o.bans)}</td>
+      <td class="muted small">${_fbTs(o.last_seen)}</td>
+      <td>${o.banned ? '<span class="badge badge-off">Banned</span>' : ''}${o.whitelisted ? ' <span class="badge badge-on">whitelisted</span>' : ''}</td>
+      <td><div class="action-row">${o.banned ? `<button class="btn btn-success btn-xs" onclick="fbUnbanIp('${esc(o.ip)}')">Unban</button>` : `<button class="btn btn-danger btn-xs" onclick="fbBanModal('${esc(o.ip)}','Top offender: manual ban')">Ban</button>`}
+        ${o.whitelisted ? '' : `<button class="btn btn-ghost btn-xs" onclick="fbWlQuick('${esc(o.ip)}')">Whitelist</button>`}</div></td>
+    </tr>`).join('') || '<tr><td colspan="10" class="empty">No anonymous abuse recorded in this period</td></tr>';
+}
+
+// ── history ──
+async function fbLoadHistory(offset) {
+  _fbHistOff = Math.max(0, offset || 0);
+  const ip = encodeURIComponent(document.getElementById('fb-hist-ip').value.trim());
+  const src = document.getElementById('fb-hist-src').value;
+  const {ok, data} = await api('GET', `/admin/ftpban/bans?state=history&limit=100&offset=${_fbHistOff}${ip ? '&ip=' + ip : ''}${src ? '&source=' + src : ''}`);
+  const tb = document.getElementById('fb-hist-tbody');
+  if (!ok) { tb.innerHTML = `<tr><td colspan="8" class="empty">${esc(_fbErr(data))}</td></tr>`; return; }
+  _setText('fb-hist-count', data.total ? `${_fbHistOff + 1}–${Math.min(_fbHistOff + 100, data.total)} of ${data.total}` : '');
+  document.getElementById('fb-hist-prev').disabled = _fbHistOff === 0;
+  document.getElementById('fb-hist-next').disabled = _fbHistOff + 100 >= data.total;
+  tb.innerHTML = data.bans.map(b => `
+    <tr>
+      <td>${_fbIp(b.ip)}</td>
+      <td>${_fbType(b)}</td>
+      <td class="small">${esc(b.reason || '—')}</td>
+      <td class="muted small">${_fbTs(b.created_at)}</td>
+      <td class="muted small">${_fbTs(b.lifted_at)}</td>
+      <td class="small">${fmtDur((b.lifted_at - b.created_at) * 1000)}</td>
+      <td class="muted small">${esc(b.lifted_by || '')}</td>
+      <td class="mono small">${b.dry_run ? '—' : fmtNum(b.blocked_packets)}</td>
+    </tr>`).join('') || '<tr><td colspan="8" class="empty">No past bans</td></tr>';
+}
+
+// ── charts ──
+async function fbLoadCharts() {
+  const days = parseInt(document.getElementById('fb-chart-days').value);
+  const {ok, data} = await api('GET', `/admin/ftpban/timeline?days=${days}`);
+  if (!ok) { toast(_fbErr(data), 'err'); return; }
+  const today = Math.floor(Date.now() / 86400000);
+  const keys = Array.from({length: days}, (_, i) => (today - days + 1 + i) * 86400);
+  const labels = keys.map(k => new Date(k * 1000).toLocaleDateString('en-US', {month: 'short', day: 'numeric', timeZone: 'UTC'}));
+  const byDay = (rows) => Object.fromEntries(rows.map(r => [r.day, r]));
+  const bans = byDay(data.bans), ev = byDay(data.events);
+  const draw = (id, type, datasets, stacked) => {
+    if (_fbCharts[id]) _fbCharts[id].destroy();
+    const ctx = _freshCtx(id); if (!ctx) return;
+    const base = chartOptions();
+    _fbCharts[id] = new Chart(ctx, {type, data: {labels, datasets}, options: stacked
+      ? {...base, scales: {x: {...base.scales.x, stacked: true}, y: {...base.scales.y, stacked: true, beginAtZero: true}}}
+      : {...base, scales: {...base.scales, y: {...base.scales.y, beginAtZero: true}}}});
+  };
+  draw('fb-chart-bans', 'bar', [
+    {label: 'Auto', data: keys.map(k => bans[k]?.auto || 0), backgroundColor: 'rgba(239,68,68,0.7)'},
+    {label: 'Manual', data: keys.map(k => bans[k]?.manual || 0), backgroundColor: 'rgba(59,130,246,0.7)'},
+    {label: 'Dry-run (not enforced)', data: keys.map(k => bans[k]?.dry_run || 0), backgroundColor: 'rgba(245,158,11,0.6)'},
+  ], true);
+  draw('fb-chart-events', 'line', Object.entries(FB_EVENTS).map(([k, e]) => ({
+    label: e.label, data: keys.map(d => ev[d]?.[k] || 0), borderColor: e.color, backgroundColor: e.color,
+    tension: 0.3, pointRadius: days > 30 ? 0 : 2,
+  })), false);
+}
+
+// ── whitelist ──
+async function fbLoadWhitelist() {
+  const {ok, data} = await api('GET', '/admin/ftpban/whitelist');
+  const tb = document.getElementById('fb-wl-tbody');
+  if (!ok) { tb.innerHTML = `<tr><td colspan="5" class="empty">${esc(_fbErr(data))}</td></tr>`; return; }
+  _setText('fb-wl-count', `${data.entries.length} entr${data.entries.length !== 1 ? 'ies' : 'y'}`);
+  const tc = document.getElementById('fb-tc-whitelist');
+  tc.textContent = data.entries.length; tc.classList.toggle('show', data.entries.length > 0);
+  tb.innerHTML = data.entries.map(w => `
+    <tr>
+      <td class="mono small">${esc(w.canonical || w.entry)}${w.canonical ? '' : ' <span class="badge badge-off" title="Ignored by the daemon">invalid</span>'}</td>
+      <td class="small">${esc(w.note || (w.created_at ? '—' : 'default / pre-existing'))}</td>
+      <td class="muted small">${_fbTs(w.created_at)}</td>
+      <td class="muted small">${esc(w.created_by || '—')}</td>
+      <td><button class="btn btn-ghost btn-xs" onclick="fbWlRemove('${esc(w.entry)}')">Remove</button></td>
+    </tr>`).join('') || '<tr><td colspan="5" class="empty">Whitelist is empty</td></tr>';
+}
+
+async function fbWlAdd(cidr, note) {
+  const {ok, data} = await api('POST', '/admin/ftpban/whitelist', {cidr, notes: note || null});
+  toast(ok ? data.message : _fbErr(data).replace(/^Value error, /, ''), ok ? 'ok' : 'err');
+  if (ok) fbRefresh(true);
+  return ok;
+}
+
+async function fbWlAddForm() {
+  const ip = document.getElementById('fb-wl-ip').value.trim(), note = document.getElementById('fb-wl-note').value.trim();
+  if (!ip) { toast('Enter an IP address or CIDR range', 'err'); return; }
+  if (await fbWlAdd(ip, note)) { document.getElementById('fb-wl-ip').value = ''; document.getElementById('fb-wl-note').value = ''; }
+}
+
+function fbWlQuick(ip) {
+  if (confirm(`Whitelist ${ip} on FTP? It will never be auto-banned, and any active auto ban on it is lifted.`)) fbWlAdd(ip, null);
+}
+
+async function fbWlRemove(entry) {
+  if (!confirm(`Remove ${entry} from the FTP whitelist? It can be auto-banned again.`)) return;
+  const {ok, data} = await api('DELETE', `/admin/ftpban/whitelist?entry=${encodeURIComponent(entry)}`);
+  toast(ok ? data.message : _fbErr(data), ok ? 'ok' : 'err');
+  if (ok) fbLoadWhitelist();
+}
+
+// ── settings ──
+async function fbLoadSettings() {
+  const {ok, data} = await api('GET', '/admin/ftpban/settings');
+  if (!ok) { showAlert('fb-set-alert', 'err', _fbErr(data)); return; }
+  const s = data.settings;
+  document.getElementById(s.enforce ? 'fb-mode-enforce' : 'fb-mode-dry').checked = true;
+  document.getElementById('fb-rules-tbody').innerHTML = Object.entries(FB_EVENTS).map(([k, e]) => {
+    const r = s.rules[k] || {};
+    return `<tr>
+      <td><input type="checkbox" id="fb-r-${k}-on" ${r.enabled ? 'checked' : ''}></td>
+      <td><b style="font-size:0.82rem">${e.label}</b><div class="field-hint" style="max-width:420px">${e.hint}</div></td>
+      <td><input type="number" min="1" id="fb-r-${k}-count" value="${r.count}"></td>
+      <td><input type="number" min="1" id="fb-r-${k}-win" value="${r.window_min}"></td>
+      <td><input type="number" min="1" id="fb-r-${k}-ban" value="${r.ban_min}"></td>
+    </tr>`;
+  }).join('');
+  document.getElementById('fb-esc-on').checked = !!s.escalation.enabled;
+  document.getElementById('fb-esc-mult').value = s.escalation.multiplier;
+  document.getElementById('fb-esc-days').value = s.escalation.lookback_days;
+  document.getElementById('fb-esc-max').value = s.escalation.max_ban_hours;
+  document.getElementById('fb-anon-users').value = (s.anon_users || []).join(', ');
+  document.getElementById('fb-ports').value = s.ports;
+  document.getElementById('fb-cport').value = s.control_port;
+  document.getElementById('fb-rport').value = s.responder_port;
+  document.getElementById('fb-msgs').innerHTML = Object.entries(FB_MSG_TYPES).map(([k, label]) => `
+    <div class="field">
+      <label>${label}</label>
+      <textarea id="fb-msg-${k}" rows="2" maxlength="300" oninput="document.getElementById('fb-msg-${k}-pv').textContent=_fbPreview(this.value)">${esc((s.messages || {})[k] || '')}</textarea>
+      <div class="field-hint mono" id="fb-msg-${k}-pv">${esc(_fbPreview((s.messages || {})[k]))}</div>
+    </div>`).join('');
+  document.getElementById('fb-retention').value = s.retention_days;
+  _setText('fb-set-meta', data.updated_at ? `Last saved ${_fbTs(data.updated_at)} by ${data.updated_by || '—'}` : '');
+  document.getElementById('fb-set-alert').style.display = 'none';
+}
+
+async function fbSaveSettings() {
+  const num = id => Number(document.getElementById(id).value);
+  const rules = {};
+  for (const k of Object.keys(FB_EVENTS))
+    rules[k] = {enabled: document.getElementById(`fb-r-${k}-on`).checked, count: num(`fb-r-${k}-count`),
+                window_min: num(`fb-r-${k}-win`), ban_min: num(`fb-r-${k}-ban`)};
+  const body = {
+    enforce: document.getElementById('fb-mode-enforce').checked,
+    anon_users: document.getElementById('fb-anon-users').value.split(',').map(x => x.trim()).filter(Boolean),
+    rules,
+    escalation: {enabled: document.getElementById('fb-esc-on').checked, multiplier: num('fb-esc-mult'),
+                 lookback_days: num('fb-esc-days'), max_ban_hours: num('fb-esc-max')},
+    ports: document.getElementById('fb-ports').value.trim(),
+    control_port: num('fb-cport'),
+    responder_port: num('fb-rport'),
+    retention_days: num('fb-retention'),
+    messages: Object.fromEntries(Object.keys(FB_MSG_TYPES).map(k => [k, document.getElementById(`fb-msg-${k}`).value])),
+  };
+  const {ok, data} = await api('PUT', '/admin/ftpban/settings', body);
+  if (!ok) {
+    const d = data?.detail;
+    showAlert('fb-set-alert', 'err', Array.isArray(d) ? d.map(x => { const f = (x.loc || []).slice(1).join('.'); return (f ? f + ': ' : '') + x.msg.replace(/^Value error, /, ''); }).join('; ') : _fbErr(data));
+    return;
+  }
+  toast(data.message, 'ok');
+  fbLoadSettings(); fbLoadStatus();
+}
+
+// ── modals ──
+function _fbModal(id, title, inner, maxw) {
+  document.getElementById(id)?.remove();
+  const m = document.createElement('div');
+  m.id = id;
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000';
+  m.innerHTML = `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.75rem;width:100%;max-width:${maxw || 420}px;max-height:90vh;overflow:auto">
+    <h2 style="font-size:0.95rem;font-weight:600;margin-bottom:1rem">${title}</h2>${inner}</div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click', e => { if (e.target === m) m.remove(); });
+  return m;
+}
+
+function _fbDurSelect(id, def) {
+  return `<select id="${id}" class="filter-select" style="width:100%" onchange="document.getElementById('${id}-custom').style.display=this.value==='custom'?'block':'none'">
+    ${FB_DURATIONS.map(([v, l]) => `<option value="${v}" ${v === def ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    <input type="number" min="1" id="${id}-custom" placeholder="Minutes" style="display:none;margin-top:0.4rem;width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-family:var(--mono);font-size:0.85rem;padding:0.5rem 0.75rem;border-radius:var(--radius)">`;
+}
+function _fbDurValue(id) {   // minutes, null = permanent, undefined = invalid
+  const v = document.getElementById(id).value;
+  if (v === '') return null;
+  const n = parseInt(v === 'custom' ? document.getElementById(id + '-custom').value : v);
+  return n > 0 ? n : undefined;
+}
+
+function fbBanModal(ip, reason) {
+  _fbModal('fb-ban-modal', 'Ban an IP from FTP', `
+    <p style="font-size:0.78rem;color:var(--text3);margin-bottom:1rem">Blocks the IP on the FTP ports (all users, not just anonymous) within a few seconds and drops its open sessions; new connections get the <b>Manual ban</b> message. Manual bans ignore the whitelist and dry-run mode.</p>
+    <div id="fb-ban-alert" class="alert"></div>
+    <div class="field"><label>IP address</label>${_modalInput('fb-ban-ip', 'IPv4 or IPv6')}</div>
+    <div class="field"><label>Duration</label>${_fbDurSelect('fb-ban-dur', '1440')}</div>
+    <div class="field"><label>Reason <span style="color:var(--text3)">(optional)</span></label>${_modalInput('fb-ban-reason', 'Shown in the ban list')}</div>
+    <div style="display:flex;gap:0.5rem;margin-top:1rem">
+      <button class="btn btn-danger" style="flex:1" onclick="fbDoBan()">Ban IP</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('fb-ban-modal').remove()">Cancel</button>
+    </div>`);
+  document.getElementById('fb-ban-ip').value = ip || '';
+  document.getElementById('fb-ban-reason').value = reason || '';
+  document.getElementById(ip ? 'fb-ban-reason' : 'fb-ban-ip').focus();
+}
+
+async function fbDoBan() {
+  const ip = document.getElementById('fb-ban-ip').value.trim();
+  const minutes = _fbDurValue('fb-ban-dur');
+  if (!ip) { showAlert('fb-ban-alert', 'err', 'Enter an IP address'); return; }
+  if (minutes === undefined) { showAlert('fb-ban-alert', 'err', 'Enter a valid number of minutes'); return; }
+  const body = {ip, duration_minutes: minutes};
+  const reason = document.getElementById('fb-ban-reason').value.trim();
+  if (reason) body.reason = reason;
+  const {ok, data} = await api('POST', '/admin/ftpban/bans', body);
+  if (!ok) { showAlert('fb-ban-alert', 'err', _fbErr(data)); return; }
+  toast(`Banned ${data.ip}`, 'ok');
+  document.getElementById('fb-ban-modal').remove();
+  if (document.getElementById('panel-ftpban').classList.contains('active')) fbRefresh(true);
+}
+
+function fbDurModal(id, ip, enforce) {
+  _fbModal('fb-dur-modal', `${enforce ? 'Enforce' : 'Change duration'} — ${esc(ip)}`, `
+    <div id="fb-dur-alert" class="alert"></div>
+    <div class="field"><label>Ban for (from now)</label>${_fbDurSelect('fb-dur-sel', '60')}</div>
+    ${enforce ? '<p style="font-size:0.78rem;color:var(--text3)">This turns the dry-run entry into a real, enforced ban.</p>' : ''}
+    <div style="display:flex;gap:0.5rem;margin-top:1rem">
+      <button class="btn ${enforce ? 'btn-danger' : 'btn-primary'}" style="flex:1" onclick="fbDoDur(${id},${enforce})">${enforce ? 'Enforce ban' : 'Save'}</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('fb-dur-modal').remove()">Cancel</button>
+    </div>`, 360);
+}
+
+async function fbDoDur(id, enforce) {
+  const minutes = _fbDurValue('fb-dur-sel');
+  if (minutes === undefined) { showAlert('fb-dur-alert', 'err', 'Enter a valid number of minutes'); return; }
+  const body = {duration_minutes: minutes};
+  if (enforce) body.enforce = true;
+  const {ok, data} = await api('PUT', `/admin/ftpban/bans/${id}/expiry`, body);
+  if (!ok) { showAlert('fb-dur-alert', 'err', _fbErr(data)); return; }
+  toast(`Updated ban for ${data.ip}`, 'ok');
+  document.getElementById('fb-dur-modal').remove();
+  fbRefresh(true);
+}
+
+async function fbIpModal(ip) {
+  const {ok, data} = await api('GET', `/admin/ftpban/ip/${encodeURIComponent(ip)}`);
+  if (!ok) { toast(_fbErr(data), 'err'); return; }
+  const active = data.bans.find(b => b.active && !b.dry_run);
+  const days = data.days.slice().reverse();
+  _fbModal('fb-ip-modal', `FTP ban detail — <span class="mono">${esc(data.ip)}</span>`, `
+    <div style="display:flex;gap:0.5rem;margin-bottom:1rem">
+      ${active ? `<span class="badge badge-off">Banned</span><button class="btn btn-success btn-xs" onclick="fbUnbanIp('${esc(data.ip)}')">Unban</button>`
+               : `<button class="btn btn-danger btn-xs" onclick="document.getElementById('fb-ip-modal').remove();fbBanModal('${esc(data.ip)}','')">Ban this IP</button>`}
+      ${data.whitelisted ? '<span class="badge badge-on">Whitelisted</span>'
+               : `<button class="btn btn-ghost btn-xs" onclick="document.getElementById('fb-ip-modal').remove();fbWlQuick('${esc(data.ip)}')">Whitelist</button>`}
+    </div>
+    <h3 style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);margin-bottom:0.5rem">Anonymous activity — last 30 days</h3>
+    <div class="table-wrap" style="margin-bottom:1rem"><table>
+      <thead><tr><th>Day</th><th>Logins</th><th>No-xfer t/o</th><th>Idle t/o</th><th>Aborted</th></tr></thead>
+      <tbody>${days.map(d => `<tr><td class="small">${new Date(d.day * 1000).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC'})}</td>
+        <td class="mono small">${fmtNum(d.connect)}</td><td class="mono small">${fmtNum(d.notransfer)}</td><td class="mono small">${fmtNum(d.idle)}</td><td class="mono small">${fmtNum(d.aborted)}</td></tr>`).join('')
+        || '<tr><td colspan="5" class="empty">No recorded activity</td></tr>'}</tbody>
+    </table></div>
+    <h3 style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text3);margin-bottom:0.5rem">Bans</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Type</th><th>Reason</th><th>Banned</th><th>Ended</th><th>Blocked</th></tr></thead>
+      <tbody>${data.bans.map(b => `<tr><td>${_fbType(b)}</td><td class="small">${esc(b.reason || '—')}</td><td class="muted small">${_fbTs(b.created_at)}</td>
+        <td class="muted small">${b.active ? (b.expires_at ? 'expires ' + _fbTs(b.expires_at) : 'permanent') : _fbTs(b.lifted_at) + ' (' + esc(b.lifted_by || '') + ')'}</td>
+        <td class="mono small">${b.dry_run ? '—' : fmtNum(b.blocked_packets)}</td></tr>`).join('')
+        || '<tr><td colspan="5" class="empty">Never banned</td></tr>'}</tbody>
+    </table></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:1rem"><button class="btn btn-ghost" onclick="document.getElementById('fb-ip-modal').remove()">Close</button></div>`, 720);
+}
+
 // ── Threat Warning ────────────────────────────────────────────────────────────
 function closeThreatWarning() {
   document.getElementById('threat-overlay').classList.remove('show');
@@ -2954,20 +4107,25 @@ let allThreats = [];
 let allBannedIPs = [];
 let allBannedUsernames = [];
 let allMultiAccount = [];
+let allWhitelist = [];
+let myIP = '';
 let currentThreatTab = 'incidents';
 
 async function loadThreats() {
   try {
-    const [tRes, bIpRes, bUserRes, multiRes] = await Promise.all([
+    const [tRes, bIpRes, bUserRes, multiRes, wlRes] = await Promise.all([
       api('GET', '/admin/threats'),
       api('GET', '/admin/bans/ips'),
       api('GET', '/admin/bans/usernames'),
       api('GET', '/admin/bans/multi-account'),
+      api('GET', '/admin/whitelist/ips'),
     ]);
     allThreats       = tRes.data.threats || [];
     allBannedIPs     = bIpRes.data.bans || [];
     allBannedUsernames = bUserRes.data.bans || [];
     allMultiAccount  = multiRes.data.entries || [];
+    allWhitelist     = wlRes.data.entries || [];
+    myIP             = wlRes.data.your_ip || '';
 
     const unreviewed = allThreats.filter(t => !t.reviewed).length;
     const disabled   = allThreats.filter(t => t.account_disabled).length;
@@ -2981,6 +4139,7 @@ async function loadThreats() {
     _setThreatTabCount('banned-ips', allBannedIPs.length);
     _setThreatTabCount('banned-usernames', allBannedUsernames.length);
     _setThreatTabCount('multi', allMultiAccount.length);
+    _setThreatTabCount('whitelist', allWhitelist.length);
 
     const badge = document.getElementById('nav-threats-badge');
     if (badge) { badge.textContent = unreviewed; badge.style.display = unreviewed > 0 ? 'inline-flex' : 'none'; }
@@ -3012,7 +4171,30 @@ function _renderCurrentThreatTab() {
   else if (currentThreatTab === 'banned-ips')   renderBannedIPs();
   else if (currentThreatTab === 'banned-usernames') renderBannedUsernames();
   else if (currentThreatTab === 'multi')        renderMultiAccount();
+  else if (currentThreatTab === 'whitelist')    renderWhitelist();
 }
+
+// IPv4/IPv6 CIDR membership, client side (only used to label rows).
+function _ipBits(ip) {
+  if (ip.includes(':')) {
+    let [h, t] = ip.split('::');
+    const hp = h ? h.split(':') : [], tp = t !== undefined ? (t ? t.split(':') : []) : null;
+    const parts = tp === null ? hp : [...hp, ...Array(8 - hp.length - tp.length).fill('0'), ...tp];
+    if (parts.length !== 8) return null;
+    return parts.map(p => parseInt(p || '0', 16).toString(2).padStart(16, '0')).join('');
+  }
+  const o = ip.split('.').map(Number);
+  if (o.length !== 4 || o.some(n => !(n >= 0 && n <= 255))) return null;
+  return o.map(n => n.toString(2).padStart(8, '0')).join('');
+}
+function ipInRange(ip, cidr) {
+  const [net, len] = String(cidr).split('/');
+  const a = _ipBits(String(ip)), b = _ipBits(net);
+  if (!a || !b || a.length !== b.length) return false;
+  const n = len === undefined ? a.length : parseInt(len);
+  return a.slice(0, n) === b.slice(0, n);
+}
+function isWhitelisted(ip) { return allWhitelist.some(w => ipInRange(ip, w.cidr)); }
 
 function renderThreats() {
   const tbody = document.getElementById('threats-tbody');
@@ -3039,11 +4221,13 @@ function renderThreats() {
       actions.push(`<button class="btn btn-success btn-xs" onclick="reenableThreat(${t.id})">Re-enable</button>`);
     const ipBanned   = allBannedIPs.some(b => b.ip_address === t.ip_address);
     const userBanned = t.username_attempted && allBannedUsernames.some(b => b.username === t.username_attempted);
-    if (!ipBanned) actions.push(`<button class="btn btn-danger btn-xs" onclick="quickBanIP('${t.ip_address}')">Ban IP</button>`);
+    const ipWl = isWhitelisted(t.ip_address);
+    if (!ipBanned && !ipWl) actions.push(`<button class="btn btn-danger btn-xs" onclick="quickBanIP('${t.ip_address}')">Ban IP</button>`);
+    if (!ipWl) actions.push(`<button class="btn btn-success btn-xs" onclick="quickWhitelistIP('${esc(t.ip_address)}')">Whitelist</button>`);
     if (t.username_attempted && !userBanned) actions.push(`<button class="btn btn-danger btn-xs" onclick="quickBanUsername('${t.username_attempted}')">Ban User</button>`);
     return `<tr>
       <td class="muted small">${fmtDate(t.created_at)}</td>
-      <td><span class="mono small">${esc(t.ip_address)}</span></td>
+      <td><span class="mono small">${esc(t.ip_address)}</span>${isWhitelisted(t.ip_address) ? ' <span class="badge badge-on" title="On the threat whitelist">whitelisted</span>' : ''}</td>
       <td><span class="mono small">${esc(t.username_attempted || '—')}</span></td>
       <td>${stageLabel}</td>
       <td>${accountCol}</td>
@@ -3095,9 +4279,11 @@ function renderMultiAccount() {
   }
   tbody.innerHTML = allMultiAccount.map(e => {
     const ipBanned = allBannedIPs.some(b => b.ip_address === e.ip_address);
-    const banBtn = ipBanned
-      ? '<span class="badge badge-off">IP Banned</span>'
-      : `<button class="btn btn-danger btn-xs" onclick="quickBanIP('${e.ip_address}')">Ban IP</button>`;
+    const banBtn = isWhitelisted(e.ip_address)
+      ? '<span class="badge badge-on">Whitelisted</span>'
+      : ipBanned
+        ? '<span class="badge badge-off">IP Banned</span>'
+        : `<button class="btn btn-danger btn-xs" onclick="quickBanIP('${e.ip_address}')">Ban IP</button>`;
     const tags = e.usernames.map(u => `<span class="mono small" style="background:var(--bg3);padding:0.1rem 0.35rem;border-radius:3px;margin:0 0.1rem;display:inline-block">${esc(u)}</span>`).join('');
     return `<tr>
       <td><span class="mono small">${esc(e.ip_address)}</span></td>
@@ -3107,6 +4293,57 @@ function renderMultiAccount() {
       <td><div class="action-row">${banBtn}</div></td>
     </tr>`;
   }).join('');
+}
+
+function renderWhitelist() {
+  const tbody = document.getElementById('whitelist-tbody');
+  if (!tbody) return;
+  const btn = document.getElementById('wl-my-ip');
+  if (btn) { btn.textContent = myIP ? `+ My IP (${myIP})` : '+ My IP'; btn.disabled = !myIP || isWhitelisted(myIP); }
+  if (!allWhitelist.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">No whitelisted IPs</td></tr>';
+    return;
+  }
+  tbody.innerHTML = allWhitelist.map(w => `<tr>
+    <td><span class="mono small">${esc(w.cidr)}</span>${myIP && ipInRange(myIP, w.cidr) ? ' <span class="badge badge-on">you</span>' : ''}</td>
+    <td class="small muted">${esc(w.notes || '—')}</td>
+    <td class="small muted">${esc(w.created_by || '—')}</td>
+    <td class="muted small">${fmtDate(w.created_at)}</td>
+    <td><button class="btn btn-ghost btn-xs" onclick="unwhitelistIP(${w.id},'${esc(w.cidr)}')">Remove</button></td>
+  </tr>`).join('');
+}
+
+async function _addWhitelist(cidr, notes) {
+  try {
+    const { ok, data } = await api('POST', '/admin/whitelist/ips', { cidr, notes: notes || null });
+    toast(ok ? data.message : (typeof data.detail === 'string' ? data.detail : data.detail?.[0]?.msg?.replace(/^Value error, /, '') || 'Request failed'), ok ? 'ok' : 'err');
+    if (ok) loadThreats();
+    return ok;
+  } catch(e) { toast('Request failed', 'err'); return false; }
+}
+
+async function whitelistIPManual() {
+  const cidr  = document.getElementById('wl-ip-addr').value.trim();
+  const notes = document.getElementById('wl-ip-notes').value.trim();
+  if (!cidr) { toast('Enter an IP address or CIDR range', 'err'); return; }
+  if (await _addWhitelist(cidr, notes)) { document.getElementById('wl-ip-addr').value = ''; document.getElementById('wl-ip-notes').value = ''; }
+}
+
+function whitelistMyIP() {
+  if (myIP && confirm(`Whitelist your current IP (${myIP})?`)) _addWhitelist(myIP, 'admin\'s own IP');
+}
+
+function quickWhitelistIP(ip) {
+  if (confirm(`Whitelist ${ip}? It will be exempt from intrusion detection and IP bans, and any ban on it is removed.`)) _addWhitelist(ip, null);
+}
+
+async function unwhitelistIP(id, cidr) {
+  if (!confirm(`Remove ${cidr} from the whitelist?`)) return;
+  try {
+    const { ok, data } = await api('DELETE', `/admin/whitelist/ips/${id}`);
+    toast(data.message || data.detail, ok ? 'ok' : 'err');
+    if (ok) loadThreats();
+  } catch(e) { toast('Request failed', 'err'); }
 }
 
 async function reviewThreat(id) {
@@ -3202,8 +4439,15 @@ if (tok) {
 }
 
 // ── Live FTP sessions (ftpwho) ────────────────────────────────────────────────
-const LIVE_POLL_MS = 2000;
-let _liveTimer = null, _liveTick = null, _liveData = null, _liveSkew = 0, _liveFilter = 'all', _livePaused = false, _liveBusy = false;
+// Rendered as a stream: one long-lived row element per session (keyed by pid),
+// stable order (newest connection first, never re-sorted by rate/state), and a
+// 10fps animation loop that advances byte counters / progress bars at the
+// measured rate between 1s polls and eases toward each new reading. Rows fade
+// in/out and the rest glide to their new positions (FLIP).
+const LIVE_POLL_MS = 1000, LIVE_FRAME_MS = 100;
+let _liveTimer = null, _liveAnim = null, _liveData = null, _liveSkew = 0, _liveFilter = 'all', _livePaused = false, _liveBusy = false;
+const _liveRows = new Map();   // pid -> {el, c, snapAt, dispBytes, dispRate, key}
+const _liveTot = { all: 0, dl: 0, ul: 0 };   // smoothed throughput cards (all sessions, not just visible)
 
 function startLive() {
   stopLive();
@@ -3212,10 +4456,10 @@ function startLive() {
     '<button class="btn btn-ghost btn-sm" id="live-pause-btn" onclick="toggleLivePause()">❚❚ Pause</button>';
   pollLive();
   _liveTimer = setInterval(() => { if (!document.hidden && !_livePaused) pollLive(); }, LIVE_POLL_MS);
-  _liveTick  = setInterval(() => { if (_liveData) { renderLiveStatus(); tickLiveTimes(); } }, 1000);
+  _liveAnim  = setInterval(() => { if (_liveData && !_livePaused && !document.hidden) liveFrame(); }, LIVE_FRAME_MS);
 }
 
-function stopLive() { clearInterval(_liveTimer); clearInterval(_liveTick); _liveTimer = _liveTick = null; }
+function stopLive() { clearInterval(_liveTimer); clearInterval(_liveAnim); _liveTimer = _liveAnim = null; }
 
 function toggleLivePause() {
   _livePaused = !_livePaused;
@@ -3262,24 +4506,34 @@ function renderLiveStatus() {
   if (_livePaused) { cls = 'paused'; label = 'Paused'; }
   else if (!d.ok && !d.generated_ms) { cls = 'down'; label = 'Offline'; }
   else if (!d.ok) { cls = 'down'; label = 'Error'; }
-  else if (age != null && age > 10000) { cls = 'stale'; label = 'Stale'; }
-  pill.className = 'live-pill ' + cls; txt.textContent = label;
-  document.getElementById('live-updated').textContent =
-    age == null ? '' : 'snapshot ' + (age < 1500 ? 'just now' : fmtDur(age) + ' ago');
+  else if (age != null && age > 10000) { cls = 'stale'; label = 'Stale — exporter not updating'; }
+  if (pill.className !== 'live-pill ' + cls) pill.className = 'live-pill ' + cls;
+  _liveSet(txt, label);
   const srv = d.server;
-  document.getElementById('live-server').textContent = srv
-    ? `${srv.server_type || 'proftpd'} · pid ${srv.pid} · up ${fmtDur(liveNow() - srv.started_ms)}` : '';
+  _liveSet(document.getElementById('live-server'), srv
+    ? `${srv.server_type || 'proftpd'} · pid ${srv.pid} · up ${fmtDur(liveNow() - srv.started_ms)}` : '');
 }
 
-function tickLiveTimes() {
-  document.querySelectorAll('#live-list [data-since]').forEach(el => {
-    if (!el.dataset.since) return;
-    el.textContent = fmtDur(liveNow() - Number(el.dataset.since));
-  });
-}
+// Only touch the DOM when the value actually changed (no layout thrash at 10fps).
+function _liveSet(el, text) { if (el && el.textContent !== text) el.textContent = text; }
+function _liveAttr(el, name, val) { if (el && el.getAttribute(name) !== val) el.setAttribute(name, val); }
 
 const LIVE_ICON  = { download: '↓', upload: '↑', idle: '…', command: '›', auth: '?' };
-const LIVE_CLASS = { anon: 'anon', registered: 'registered', trusted: 'trusted', other: 'system', auth: 'login' };
+const LIVE_CLASS = { anon: 'anon', registered: 'registered', trusted: 'trusted', private: 'private', other: 'system', auth: 'login' };
+
+function _liveVisible(conns) {
+  const q = document.getElementById('live-search').value.trim().toLowerCase();
+  const uc = document.getElementById('live-class').value;
+  const idleStates = ['idle', 'command', 'auth'];
+  return conns.filter(c => {
+    if (_liveFilter === 'transfers' && !(c.state === 'download' || c.state === 'upload')) return false;
+    if ((_liveFilter === 'download' || _liveFilter === 'upload') && c.state !== _liveFilter) return false;
+    if (_liveFilter === 'idle' && !idleStates.includes(c.state)) return false;
+    if (uc && c.user_class !== uc) return false;
+    if (q && ![c.user, c.remote_address, c.remote_name, c.command_args, c.location, c.file_path].some(v => v && String(v).toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a, b) => ((b.connected_since_ms || 0) - (a.connected_since_ms || 0)) || (b.pid - a.pid));  // stable: newest first
+}
 
 function renderLive() {
   const d = _liveData; if (!d) return;
@@ -3289,84 +4543,204 @@ function renderLive() {
 
   const conns = d.connections || [];
   const dl = conns.filter(c => c.state === 'download'), ul = conns.filter(c => c.state === 'upload');
-  const xfers = dl.concat(ul), idle = conns.filter(c => c.state === 'idle' || c.state === 'command' || c.state === 'auth');
-  const sum = arr => arr.reduce((a, c) => a + (c.rate_bps || 0), 0);
+  const idle = conns.filter(c => c.state === 'idle' || c.state === 'command' || c.state === 'auth');
   const ips = new Set(conns.map(c => c.remote_address));
   const users = new Set(conns.filter(c => c.user && c.user !== 'anonftp').map(c => c.user));
-  document.getElementById('live-s-conn').textContent = conns.length;
-  document.getElementById('live-s-ips').textContent = `${ips.size} unique IPs · ${users.size} named user${users.size === 1 ? '' : 's'}`;
-  document.getElementById('live-s-dl').textContent = dl.length;
-  document.getElementById('live-s-dl-sub').textContent = fmtRate(sum(dl));
-  document.getElementById('live-s-ul').textContent = ul.length;
-  document.getElementById('live-s-ul-sub').textContent = fmtRate(sum(ul));
-  document.getElementById('live-s-rate').textContent = fmtRate(sum(xfers));
-  document.getElementById('live-s-idle').textContent = idle.length;
-  document.getElementById('live-s-idle-sub').textContent = `${conns.filter(c => c.state === 'idle').length} idle · ${conns.filter(c => c.state === 'command').length} listing`;
-
+  _liveSet(document.getElementById('live-s-conn'), String(conns.length));
+  _liveSet(document.getElementById('live-s-ips'), `${ips.size} unique IPs · ${users.size} named user${users.size === 1 ? '' : 's'}`);
+  _liveSet(document.getElementById('live-s-dl'), String(dl.length));
+  _liveSet(document.getElementById('live-s-ul'), String(ul.length));
+  _liveSet(document.getElementById('live-s-idle'), String(idle.length));
+  _liveSet(document.getElementById('live-s-idle-sub'), `${conns.filter(c => c.state === 'idle').length} idle · ${conns.filter(c => c.state === 'command').length} listing`);
   const badge = document.getElementById('nav-live-badge');
   if (badge) { badge.textContent = conns.length; badge.style.display = conns.length ? 'inline-flex' : 'none'; }
 
-  const chips = [['all', 'All', conns.length], ['transfers', 'Transfers', xfers.length], ['download', 'Downloads', dl.length], ['upload', 'Uploads', ul.length], ['idle', 'Idle / Browsing', idle.length]];
-  document.getElementById('live-chips').innerHTML = chips.map(([k, l, n]) =>
+  const chips = [['all', 'All', conns.length], ['transfers', 'Transfers', dl.length + ul.length], ['download', 'Downloads', dl.length], ['upload', 'Uploads', ul.length], ['idle', 'Idle / Browsing', idle.length]];
+  const chipHtml = chips.map(([k, l, n]) =>
     `<button class="live-chip${_liveFilter === k ? ' active' : ''}" onclick="_liveFilter='${k}';renderLive()">${l}<span class="n">${n}</span></button>`).join('');
+  const chipBox = document.getElementById('live-chips');
+  if (chipBox.innerHTML !== chipHtml) chipBox.innerHTML = chipHtml;
 
-  const q = document.getElementById('live-search').value.trim().toLowerCase();
-  const uc = document.getElementById('live-class').value;
-  let rows = conns.filter(c => {
-    if (_liveFilter === 'transfers' && !(c.state === 'download' || c.state === 'upload')) return false;
-    if ((_liveFilter === 'download' || _liveFilter === 'upload') && c.state !== _liveFilter) return false;
-    if (_liveFilter === 'idle' && !idle.includes(c)) return false;
-    if (uc && c.user_class !== uc) return false;
-    if (q && ![c.user, c.remote_address, c.remote_name, c.command_args, c.location].some(v => v && String(v).toLowerCase().includes(q))) return false;
-    return true;
-  });
-  const rank = { upload: 0, download: 1, command: 2, auth: 3, idle: 4 };
-  rows.sort((a, b) => (rank[a.state] - rank[b.state]) || ((b.rate_bps || 0) - (a.rate_bps || 0)) || ((a.connected_since_ms || 0) - (b.connected_since_ms || 0)));
-
-  const list = document.getElementById('live-list');
-  if (!rows.length) {
-    list.innerHTML = `<div class="empty">${conns.length ? 'No sessions match this filter.' : (d.ok ? 'No one is connected right now.' : 'No data.')}</div>`;
-    return;
-  }
-  list.innerHTML = rows.map(liveRow).join('');
+  _liveReconcile(_liveVisible(conns), conns.length, d.ok);
+  liveFrame();
 }
 
-function liveRow(c) {
-  const isX = c.state === 'download' || c.state === 'upload';
-  const userLabel = c.user ? (c.user === 'anonftp' ? 'anonymous' : c.user) : '(logging in)';
-  const secure = c.protocol && /ftps|sftp/i.test(c.protocol);
-  const host = c.remote_name && c.remote_name !== c.remote_address ? ` title="${esc(c.remote_name)}"` : '';
+function _liveReconcile(rows, total, ok) {
+  const list = document.getElementById('live-list');
+  let empty = list.querySelector(':scope > .empty');
+  // FLIP "first": where existing rows are now
+  const first = new Map();
+  _liveRows.forEach((r, pid) => { if (!r.leaving) first.set(pid, r.el.getBoundingClientRect().top); });
 
-  let what;
-  if (isX || c.command_args) {
-    const file = c.command_args || '';
-    what = `<div class="f" title="${esc(file)}"><span class="cmd">${esc(c.command || '')}</span>${esc(file.split('/').pop() || file)}</div>
-            <div class="loc" title="${esc(c.location || '')}">${esc(c.location || '/')}</div>`;
-  } else {
-    what = `<div class="f">${c.command ? `<span class="cmd">${esc(c.command)}</span>` : ''}<span class="muted">${esc(c.location || '/')}</span></div>
-            <div class="loc">${c.state === 'idle' ? 'idle ' + `<span data-since="${c.idle_since_ms || ''}">${c.idle_since_ms ? fmtDur(liveNow() - c.idle_since_ms) : ''}</span>` : (c.state === 'auth' ? 'authenticating' : 'browsing')}</div>`;
+  const want = new Set(rows.map(c => c.pid));
+  // leaving rows: fade + collapse in place, then remove
+  _liveRows.forEach((r, pid) => {
+    if (want.has(pid)) return;
+    _liveRows.delete(pid);
+    const el = r.el;
+    el.style.maxHeight = el.offsetHeight + 'px';
+    el.classList.add('leaving');
+    requestAnimationFrame(() => { el.style.maxHeight = '0px'; el.style.paddingTop = el.style.paddingBottom = '0px'; });
+    setTimeout(() => el.remove(), 550);
+  });
+
+  if (!rows.length) {
+    if (!empty) { empty = document.createElement('div'); empty.className = 'empty'; list.appendChild(empty); }
+    _liveSet(empty, total ? 'No sessions match this filter.' : (ok ? 'No one is connected right now.' : 'No data.'));
+    return;
   }
+  if (empty) empty.remove();
 
-  let prog;
-  if (isX) {
-    const pct = c.transfer_pct;
-    const indet = pct == null;
-    prog = `<div class="bar ${c.state}${indet ? ' indet' : ''}"><div style="width:${indet ? 35 : Math.max(1, Math.min(100, pct))}%"></div></div>
-            <div class="nums"><span>${fmtBytes(c.transfer_bytes)}${indet ? '' : ' · ' + pct + '%'}</span><span class="rate">${fmtRate(c.rate_bps)}</span></div>`;
-  } else {
-    prog = `<div class="quiet">—</div>`;
+  const now = performance.now();
+  const added = [];
+  for (const c of rows) {
+    let r = _liveRows.get(c.pid);
+    if (!r) {
+      r = { el: _liveNewRow(c.pid), c, snapAt: now, dispBytes: null, dispRate: c.rate_bps || 0, key: null };
+      r.el.classList.add('entering');
+      _liveRows.set(c.pid, r);
+      added.push(r);
+    }
+    // new transfer (different file / restarted) -> don't animate from the old counter
+    const key = (c.state || '') + '|' + (c.file_path || c.command_args || '');
+    if (r.key !== key || (c.transfer_bytes != null && r.dispBytes != null && c.transfer_bytes < r.dispBytes - Math.max(4194304, (c.file_size || 0) * 0.05))) {
+      r.dispBytes = c.transfer_bytes; r.key = key;
+    }
+    r.c = c; r.snapAt = now;
+    _liveUpdateStatic(r);
   }
+  // place rows in order, leaving fading rows where they are
+  let cursor = list.firstElementChild;
+  for (const c of rows) {
+    const el = _liveRows.get(c.pid).el;
+    while (cursor && cursor.classList.contains('leaving')) cursor = cursor.nextElementSibling;
+    if (cursor === el) { cursor = cursor.nextElementSibling; continue; }
+    list.insertBefore(el, cursor);
+  }
+  // FLIP "last/invert/play": glide moved rows, fade in new ones
+  _liveRows.forEach((r, pid) => {
+    if (!first.has(pid)) return;
+    const dy = first.get(pid) - r.el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) return;
+    r.el.style.transition = 'none';
+    r.el.style.transform = `translateY(${dy}px)`;
+    requestAnimationFrame(() => { r.el.style.transition = 'transform 0.35s ease, opacity 0.35s ease, background 0.15s'; r.el.style.transform = ''; });
+  });
+  if (added.length) requestAnimationFrame(() => requestAnimationFrame(() => added.forEach(r => r.el.classList.remove('entering'))));
+}
 
-  return `<div class="sess">
-    <div class="sess-icon ${c.state}">${LIVE_ICON[c.state] || '•'}</div>
+function _liveNewRow(pid) {
+  const el = document.createElement('div');
+  el.className = 'sess';
+  el.dataset.pid = pid;
+  el.innerHTML = `
+    <div class="sess-icon"></div>
     <div class="sess-who">
-      <div class="u">${esc(userLabel)} <span class="uclass ${c.user_class}">${LIVE_CLASS[c.user_class] || c.user_class}</span></div>
-      <div class="ip"${host}>${esc(c.remote_address || '—')} <span class="proto${secure ? ' secure' : ''}">${esc(c.protocol || '?')}</span></div>
+      <div class="u"><span class="nm"></span> <span class="uclass"></span></div>
+      <div class="ip"><span class="ipt"></span> <span class="proto"></span><span class="banwrap"></span></div>
     </div>
-    <div class="sess-what">${what}</div>
-    <div class="sess-prog">${prog}</div>
-    <div class="sess-time"><span data-since="${c.connected_since_ms}">${fmtDur(liveNow() - c.connected_since_ms)}</span><div class="pid">pid ${c.pid}</div></div>
-  </div>`;
+    <div class="sess-what"><div class="f"><span class="cmd"></span><span class="fn"></span></div><div class="loc"></div></div>
+    <div class="sess-prog">
+      <div class="xfer" hidden>
+        <div class="bar"><div class="fill"></div></div>
+        <div class="nums"><span class="bytes"></span><span class="rate"></span></div>
+        <div class="sub"><span class="eta"></span></div>
+      </div>
+      <div class="quiet"></div>
+    </div>
+    <div class="sess-time"><span class="conn" title="Connected for"></span><div class="cmdt"></div><div class="pid"></div></div>`;
+  const q = sel => el.querySelector(sel);
+  el._q = { icon: q('.sess-icon'), nm: q('.nm'), uclass: q('.uclass'), ipt: q('.ipt'), proto: q('.proto'), ban: q('.banwrap'),
+            cmd: q('.cmd'), fn: q('.fn'), f: q('.f'), loc: q('.loc'), xfer: q('.xfer'), bar: q('.bar'), fill: q('.fill'),
+            bytes: q('.bytes'), rate: q('.rate'), sub: q('.sub'), eta: q('.eta'), quiet: q('.quiet'),
+            conn: q('.conn'), cmdt: q('.cmdt'), pid: q('.pid') };
+  return el;
+}
+
+// Fields that only change with a new snapshot.
+function _liveUpdateStatic(r) {
+  const c = r.c, Q = r.el._q;
+  const isX = c.state === 'download' || c.state === 'upload';
+  _liveAttr(Q.icon, 'class', 'sess-icon ' + c.state);
+  _liveSet(Q.icon, LIVE_ICON[c.state] || '•');
+  _liveSet(Q.nm, c.user ? (c.user === 'anonftp' ? 'anonymous' : c.user) : '(logging in)');
+  _liveAttr(Q.uclass, 'class', 'uclass ' + c.user_class);
+  _liveSet(Q.uclass, LIVE_CLASS[c.user_class] || c.user_class || '');
+  _liveSet(Q.ipt, c.remote_address || '—');
+  _liveAttr(Q.ipt, 'title', c.remote_name && c.remote_name !== c.remote_address ? c.remote_name : '');
+  const secure = c.protocol && /ftps|sftp/i.test(c.protocol);
+  _liveAttr(Q.proto, 'class', 'proto' + (secure ? ' secure' : ''));
+  _liveSet(Q.proto, c.protocol || '?');
+  const banHtml = c.user_class === 'anon' && c.remote_address
+    ? ` <button class="btn btn-ghost btn-xs" style="padding:0 0.35rem;font-size:0.6rem" title="Ban this IP from FTP" onclick="fbBanModal('${esc(c.remote_address)}','From Live Sessions')">Ban IP</button>` : '';
+  if (Q.ban.innerHTML !== banHtml) Q.ban.innerHTML = banHtml;
+
+  if (isX || c.command_args) {
+    const file = c.command_args || c.file_path || '';
+    _liveSet(Q.cmd, c.command || ''); Q.cmd.hidden = !c.command;
+    _liveSet(Q.fn, file.split('/').pop() || file);
+    _liveAttr(Q.f, 'title', c.file_path || file);
+    _liveSet(Q.loc, c.location || '/');
+  } else {
+    _liveSet(Q.cmd, c.command || ''); Q.cmd.hidden = !c.command;
+    _liveSet(Q.fn, c.location || '/');
+    _liveAttr(Q.f, 'title', c.location || '');
+  }
+  Q.xfer.hidden = !isX;
+  Q.quiet.hidden = isX;
+  _liveAttr(Q.bar, 'class', 'bar ' + c.state + (isX && c.transfer_pct == null ? ' indet' : ''));
+  _liveSet(Q.pid, 'pid ' + c.pid);
+}
+
+// Per-frame interpolation: counters/bars advance at the measured rate between polls.
+function liveFrame() {
+  const now = performance.now(), wall = liveNow();
+  _liveRows.forEach(r => {
+    const c = r.c, Q = r.el._q;
+    const isX = c.state === 'download' || c.state === 'upload';
+    const stalledMs = c.last_io_ms ? wall - c.last_io_ms : null;
+    if (isX) {
+      const target = c.rate_bps || 0;
+      r.dispRate += (target - r.dispRate) * 0.18;                       // smoothed speed
+      const stalled = stalledMs != null && stalledMs > 30000;
+      if (c.transfer_bytes != null) {
+        let predicted = c.transfer_bytes + (stalled ? 0 : target) * (now - r.snapAt) / 1000;
+        if (c.file_size && c.state === 'download') predicted = Math.min(predicted, c.file_size);
+        r.dispBytes = r.dispBytes == null ? predicted : r.dispBytes + (predicted - r.dispBytes) * 0.35;
+      }
+      const approx = c.progress_approx ? '≈' : '';
+      const size = c.state === 'download' ? c.file_size : null;
+      const pct = size ? Math.min(100, (r.dispBytes || 0) / size * 100) : c.transfer_pct;
+      if (pct != null) Q.fill.style.width = Math.max(1, pct).toFixed(2) + '%';
+      _liveSet(Q.bytes, `${approx}${fmtBytes(r.dispBytes)}${size ? ' / ' + fmtBytes(size) : ''}${pct != null ? ' · ' + approx + pct.toFixed(1) + '%' : ''}`);
+      if (stalled) {
+        _liveAttr(Q.rate, 'class', 'stall');
+        _liveSet(Q.rate, 'no data ' + fmtDur(stalledMs));
+      } else {
+        _liveAttr(Q.rate, 'class', 'rate');
+        _liveSet(Q.rate, fmtRate(r.dispRate));
+      }
+      const left = size && r.dispRate > 1024 ? (size - (r.dispBytes || 0)) / r.dispRate * 1000 : null;
+      Q.sub.hidden = left == null || stalled;
+      if (left != null) _liveSet(Q.eta, 'ETA ' + fmtDur(left));
+    } else if (c.session_bytes_out) {
+      _liveSet(Q.quiet, `sent ${fmtBytes(c.session_bytes_out)}` + (stalledMs != null && stalledMs > 60000 ? ` · quiet ${fmtDur(stalledMs)}` : '')
+        + (c.state === 'idle' && c.idle_since_ms ? ` · idle ${fmtDur(wall - c.idle_since_ms)}` : ''));
+    } else {
+      _liveSet(Q.quiet, c.state === 'auth' ? 'authenticating' : (c.state === 'idle' && c.idle_since_ms ? 'idle ' + fmtDur(wall - c.idle_since_ms) : '—'));
+    }
+    _liveSet(Q.conn, fmtDur(wall - c.connected_since_ms));
+    const cmdTxt = c.command && c.cmd_since_ms ? `${c.command} ${c.cmd_since_approx ? '≥' : ''}${fmtDur(wall - c.cmd_since_ms)}` : '';
+    _liveSet(Q.cmdt, cmdTxt);
+  });
+  const moving = st => (_liveData.connections || []).filter(c => c.state === st && !(c.last_io_ms && wall - c.last_io_ms > 30000))
+                                                     .reduce((a, c) => a + (c.rate_bps || 0), 0);
+  const dlT = moving('download'), ulT = moving('upload');
+  _liveTot.dl += (dlT - _liveTot.dl) * 0.18; _liveTot.ul += (ulT - _liveTot.ul) * 0.18; _liveTot.all += (dlT + ulT - _liveTot.all) * 0.18;
+  _liveSet(document.getElementById('live-s-rate'), fmtRate(_liveTot.all));
+  _liveSet(document.getElementById('live-s-dl-sub'), fmtRate(_liveTot.dl));
+  _liveSet(document.getElementById('live-s-ul-sub'), fmtRate(_liveTot.ul));
+  renderLiveStatus();
 }
 </script>
 </body>

@@ -7,6 +7,7 @@ Also reads/writes tailer_config for settings and status.
 """
 
 import csv
+import functools
 import io
 import json
 import threading
@@ -27,14 +28,20 @@ from config import settings
 # threadpool, and background stats-cache refreshes (see _swr below) add
 # another concurrent thread on top of that, so getconn()/putconn() need the
 # pool's own locking rather than assuming single-threaded access.
+_POOL_MAX = 10
+_POOL_WAIT_SECONDS = 20
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
+# getconn() raises immediately when the pool is empty. Requests queue here
+# instead, so a burst (one public overview refresh alone is 7 parallel requests)
+# waits a moment rather than failing with a 503, admin routes included.
+_pool_slots = threading.BoundedSemaphore(_POOL_MAX)
 
 
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     global _pool
     if _pool is None:
         _pool = psycopg2.pool.ThreadedConnectionPool(
-            1, 10,
+            1, _POOL_MAX,
             settings.logs_database_url,
             cursor_factory=psycopg2.extras.RealDictCursor,
         )
@@ -43,10 +50,17 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
 
 class _Ctx:
     def __enter__(self):
-        self.c = _get_pool().getconn()
+        if not _pool_slots.acquire(timeout=_POOL_WAIT_SECONDS):
+            raise psycopg2.pool.PoolError("timed out waiting for a connection")
+        try:
+            self.c = _get_pool().getconn()
+        except Exception:
+            _pool_slots.release()
+            raise
         return self.c
     def __exit__(self, *_):
         _get_pool().putconn(self.c)
+        _pool_slots.release()
 
 
 def _conn():
@@ -68,7 +82,49 @@ def _q1(conn, sql: str, params=()) -> dict | None:
 # ── Stats cache ───────────────────────────────────────────────────────────────
 
 _cache_table_ready = False
-_CACHE_TTL = "5 minutes"
+
+# TTL scales with the window a key covers: a few new rows barely move a
+# 1-year or all-time aggregate, but recomputing one scans millions of rows.
+_TTL_ALL_TIME = 3600
+_TTL_SHORT = 300  # the upload tables are tiny; refreshing them is cheap
+
+
+def _ttl_for_days(days: int) -> int:
+    if days <= 1:
+        return 300
+    if days <= 7:
+        return 600
+    if days <= 30:
+        return 900
+    if days <= 90:
+        return 1800
+    return _TTL_ALL_TIME
+
+
+# Sub-day windows the public overview offers: window minutes -> timeline bucket
+# seconds. A fixed set, since these routes are public and each value is a cache
+# key. Cheap (0.1s at 12h) but meaningless if stale, so they use a very short
+# TTL and never serve an expired value (see _cached_fresh).
+MINUTE_WINDOWS = {1: 5, 5: 15, 60: 60, 720: 900}
+
+
+def _ttl_for_minutes(minutes: int) -> int:
+    if minutes <= 5:
+        return 5
+    if minutes <= 60:
+        return 30
+    return 120
+
+
+def _window_key(days: Optional[int], minutes: Optional[int]) -> str:
+    return f"m{minutes}" if minutes else str(days)
+
+
+def _bucket_sql(bucket: str, minutes: Optional[int]) -> tuple[str, object]:
+    """(SQL expression, its parameter) for a timeline's bucket column."""
+    if minutes:
+        return "date_bin(%s * INTERVAL '1 second', logged_at, TIMESTAMPTZ 'epoch')", MINUTE_WINDOWS[minutes]
+    return "date_trunc(%s, logged_at)", bucket
 
 
 def _ensure_cache_table():
@@ -100,19 +156,19 @@ def _ensure_cache_table():
     _cache_table_ready = True
 
 
-def _cache_get_any(key: str):
+def _cache_get_any(key: str, ttl: int):
     """Look up a cache row regardless of age.
 
     Returns (data, is_fresh): data is None if nothing has ever been computed
-    for this key; is_fresh is True while inside the TTL window.
+    for this key; is_fresh is True while inside the TTL window (seconds).
     """
     try:
         _ensure_cache_table()
         with _conn() as conn:
             row = _q1(conn,
-                f"SELECT data, (computed_at > NOW() - INTERVAL '{_CACHE_TTL}') AS is_fresh "
-                f"FROM stats_cache WHERE cache_key = %s",
-                (key,))
+                "SELECT data, (computed_at > NOW() - %s * INTERVAL '1 second') AS is_fresh "
+                "FROM stats_cache WHERE cache_key = %s",
+                (ttl, key))
             if row and row["data"] is not None:
                 return row["data"], bool(row["is_fresh"])  # JSONB already deserialized
     except Exception:
@@ -161,10 +217,18 @@ def _cache_set(key: str, data):
 # These aggregate queries scan millions of rows and can take 10-30s+ once the
 # combined (all-sources) case has to fall back to a live query. Blocking a
 # request on that is what made pages feel broken rather than slow, so instead:
-# always hand back the last computed value immediately (even past the 5-minute
-# TTL) and kick off a background refresh; only a key that has *never* been
-# computed pays the synchronous cost.
+# always hand back the last computed value immediately (even past its TTL) and
+# kick off a background refresh; only a key that has *never* been computed
+# pays the synchronous cost.
+#
+# At most _BG_SLOTS refreshes run at once; the rest wait their turn. Without
+# this, a page load touching dozens of stale keys fired them all in parallel,
+# exhausted the connection pool (failing ordinary admin requests), and a
+# minutes-long compute whose _cache_set then couldn't get a connection was
+# thrown away and redone on the next read — indefinitely.
 
+_BG_SLOTS = 2
+_bg_slots = threading.BoundedSemaphore(_BG_SLOTS)
 _bg_inflight: set[str] = set()
 _bg_inflight_lock = threading.Lock()
 
@@ -172,12 +236,13 @@ _bg_inflight_lock = threading.Lock()
 def _refresh_in_background(key: str, compute):
     with _bg_inflight_lock:
         if key in _bg_inflight:
-            return  # a refresh for this key is already running
+            return  # a refresh for this key is already running or queued
         _bg_inflight.add(key)
 
     def _run():
         try:
-            _cache_set(key, compute())
+            with _bg_slots:
+                _cache_set(key, compute())
         except Exception:
             pass
         finally:
@@ -187,8 +252,8 @@ def _refresh_in_background(key: str, compute):
     threading.Thread(target=_run, daemon=True, name=f"stats-refresh:{key}").start()
 
 
-def _swr(key: str, compute):
-    data, fresh = _cache_get_any(key)
+def _swr(key: str, compute, ttl: int):
+    data, fresh = _cache_get_any(key, ttl)
     if data is not None:
         if not fresh:
             _refresh_in_background(key, compute)
@@ -198,8 +263,37 @@ def _swr(key: str, compute):
     return result
 
 
+_fresh_locks: dict[str, threading.Lock] = {}
+
+
+def _cached_fresh(key: str, compute, ttl: int):
+    """For minute windows, where an expired value is simply wrong: recompute in
+    the request, one at a time per key so concurrent viewers share one query."""
+    data, fresh = _cache_get_any(key, ttl)
+    if fresh:
+        return data
+    with _fresh_locks.setdefault(key, threading.Lock()):
+        data, fresh = _cache_get_any(key, ttl)
+        if fresh:
+            return data
+        result = compute()
+        _cache_set(key, result)
+        return result
+
+
+def _swr_window(key: str, compute, days: Optional[int], minutes: Optional[int]):
+    if minutes:
+        return _cached_fresh(key, compute, _ttl_for_minutes(minutes))
+    return _swr(key, compute, _ttl_for_days(days))
+
+
 def warmup_stats_cache():
-    """Pre-compute common stats combinations so page loads are instant."""
+    """Pre-compute common stats combinations so page loads are instant.
+
+    Called once at startup. Cached keys survive restarts, so for them this
+    only queues a (rate-limited) background refresh if they're stale; only
+    never-computed keys are computed synchronously here.
+    """
     # Cheap (indexed MIN lookups) — warms the "Max" button's label/target for
     # every source scope without touching the expensive aggregate queries.
     for source in (None, "ftp", "http"):
@@ -242,6 +336,20 @@ def warmup_stats_cache():
         get_upload_timeline(days=30, bucket="day")
     except Exception:
         pass
+    # Heatmaps: one all-history hourly series per source serves every range.
+    for source in ("ftp", "http"):
+        try:
+            _heat_series_all(source)
+        except Exception:
+            pass
+    # Last: the public overview's windowed Top Files/IPs. A cold 1y compute
+    # takes about a minute, past nginx's 30s proxy timeout, so it can't be left to the
+    # first click.
+    for days in (1, 7, 30, 365):
+        try:
+            get_user_download_stats(days=days)
+        except Exception:
+            pass
 
 
 # ── Tailer config helpers ─────────────────────────────────────────────────────
@@ -503,6 +611,19 @@ def _anon_downloads_sql(source: Optional[str] = None) -> str:
     ) anon_eff"""
 
 
+_WINDOW_COLS = ("n_groups", "total", "total_bytes")
+
+
+def _window_val(rows: list, col: str) -> int:
+    """A window-function column (identical on every row) from a top-N
+    result; 0 when the filtered set is empty."""
+    return int(rows[0][col] or 0) if rows else 0
+
+
+def _strip_window(rows: list) -> list[dict]:
+    return [{k: v for k, v in r.items() if k not in _WINDOW_COLS} for r in rows]
+
+
 def _ser(row) -> dict:
     out = {}
     for k, v in dict(row).items():
@@ -565,77 +686,95 @@ def get_user_download_stats(
     source: Optional[str] = None,
     exclude_username: Optional[str] = None,
     username_exact: Optional[str] = None,
+    days: Optional[int] = None,
+    minutes: Optional[int] = None,
 ) -> dict:
+    span = minutes or (days * 1440 if days else None)
     sort_files_by = sort_files_by if sort_files_by in ("downloads", "bytes") else "downloads"
     sort_users_by = sort_users_by if sort_users_by in ("downloads", "bytes") else "downloads"
 
     def _compute():
         where, params = _where(date_from=date_from, date_to=date_to, source=source,
                                exclude_username=exclude_username, username_exact=username_exact)
+        if span:
+            where += (" AND " if where else " WHERE ") + "logged_at >= NOW() - (%s * INTERVAL '1 minute')"
+            params.append(span)
+        # No separate COUNT(DISTINCT ...) pass: each GROUP BY below already
+        # builds the distinct set, so a window count over its groups gives
+        # the unique_* figure (filename is basename(filepath), so file groups
+        # == distinct filepaths) and the window sums give total/total_bytes.
+        # COUNT(DISTINCT) sorts every row and spilled GBs of temp files.
         with _conn() as conn:
-            agg = _q1(conn,
-                f"""SELECT COUNT(*) AS total,
-                           COUNT(DISTINCT username) AS unique_users,
-                           COUNT(DISTINCT ip_address) AS unique_ips,
-                           COUNT(DISTINCT filepath) AS unique_files,
-                           COALESCE(SUM(bytes), 0) AS total_bytes
-                    FROM user_downloads{where}""", params)
             top_files = _q(conn,
                 f"""SELECT filepath, filename,
                            COUNT(*) AS downloads,
-                           COALESCE(SUM(bytes), 0) AS bytes
+                           COALESCE(SUM(bytes), 0) AS bytes,
+                           COUNT(*) OVER () AS n_groups
                     FROM user_downloads{where}
                     GROUP BY filepath, filename
                     ORDER BY {sort_files_by} DESC LIMIT 10""", params)
             top_users = _q(conn,
                 f"""SELECT username,
                            COUNT(*) AS downloads,
-                           COALESCE(SUM(bytes), 0) AS bytes
+                           COALESCE(SUM(bytes), 0) AS bytes,
+                           COUNT(*) OVER () AS n_groups,
+                           SUM(COUNT(*)) OVER () AS total,
+                           SUM(COALESCE(SUM(bytes), 0)) OVER () AS total_bytes
                     FROM user_downloads{where}
                     GROUP BY username
                     ORDER BY {sort_users_by} DESC LIMIT 10""", params)
             top_ips = _q(conn,
                 f"""SELECT HOST(ip_address) AS ip_address,
                            COUNT(*) AS downloads,
-                           COALESCE(SUM(bytes), 0) AS bytes
+                           COALESCE(SUM(bytes), 0) AS bytes,
+                           COUNT(*) OVER () AS n_groups
                     FROM user_downloads{where}
                     GROUP BY ip_address ORDER BY downloads DESC LIMIT 10""", params)
         return {
-            "total": agg["total"], "unique_users": agg["unique_users"],
-            "unique_ips": agg["unique_ips"], "unique_files": agg["unique_files"],
-            "total_bytes": agg["total_bytes"],
-            "top_files": [dict(r) for r in top_files],
-            "top_users": [dict(r) for r in top_users],
-            "top_ips":   [dict(r) for r in top_ips],
+            "total": _window_val(top_users, "total"),
+            "unique_users": _window_val(top_users, "n_groups"),
+            "unique_ips": _window_val(top_ips, "n_groups"),
+            "unique_files": _window_val(top_files, "n_groups"),
+            "total_bytes": _window_val(top_users, "total_bytes"),
+            "top_files": _strip_window(top_files),
+            "top_users": _strip_window(top_users),
+            "top_ips":   _strip_window(top_ips),
         }
 
     if date_from or date_to:
         return _compute()
     ck = f"user_stats:{source or ''}:{sort_files_by}:{sort_users_by}:{exclude_username or ''}:{username_exact or ''}"
-    return _swr(ck, _compute)
+    if span:
+        return _swr_window(f"{ck}:{_window_key(days, minutes)}", _compute, days, minutes)
+    return _swr(ck, _compute, _TTL_ALL_TIME)
 
 
-def get_user_download_timeline(days: int = 30, bucket: str = "day", source: Optional[str] = None) -> list:
+def get_user_download_timeline(days: int = 30, bucket: str = "day", source: Optional[str] = None,
+                               minutes: Optional[int] = None) -> list:
     bucket = bucket if bucket in ("hour", "day", "week") else "day"
+    span = minutes or days * 1440
 
     def _compute():
         reg_from = _registered_downloads_sql(source)
+        bucket_expr, bucket_arg = _bucket_sql(bucket, minutes)
         with _conn() as conn:
             rows = _q(conn,
-                f"""SELECT date_trunc(%s, logged_at) AS bucket,
+                f"""SELECT {bucket_expr} AS bucket,
                            COUNT(*) AS downloads, COALESCE(SUM(bytes), 0) AS bytes
                     FROM {reg_from}
-                    AND logged_at >= NOW() - (%s * INTERVAL '1 day')
+                    AND logged_at >= NOW() - (%s * INTERVAL '1 minute')
                     GROUP BY bucket ORDER BY bucket ASC""",
-                [bucket, days])
+                [bucket_arg, span])
         return [_ser(r) for r in rows]
 
-    ck = f"user_tl:{days}:{bucket}:{source or ''}"
-    return _swr(ck, _compute)
+    ck = f"user_tl:{_window_key(days, minutes)}:{bucket}:{source or ''}"
+    return _swr_window(ck, _compute, days, minutes)
 
 
-def get_user_download_breakdown(days: int = 30, sort_by: str = "downloads", source: Optional[str] = None) -> list:
+def get_user_download_breakdown(days: int = 30, sort_by: str = "downloads", source: Optional[str] = None,
+                                minutes: Optional[int] = None) -> list:
     sort_by = sort_by if sort_by in ("downloads", "bytes") else "downloads"
+    span = minutes or days * 1440
 
     def _compute():
         reg_from = _registered_downloads_sql(source)
@@ -644,13 +783,13 @@ def get_user_download_breakdown(days: int = 30, sort_by: str = "downloads", sour
                 f"""SELECT username, COUNT(*) AS downloads,
                            COALESCE(SUM(bytes), 0) AS bytes
                     FROM {reg_from}
-                    AND logged_at >= NOW() - (%s * INTERVAL '1 day')
+                    AND logged_at >= NOW() - (%s * INTERVAL '1 minute')
                     GROUP BY username ORDER BY {sort_by} DESC LIMIT 25""",
-                [days])
+                [span])
         return [dict(r) for r in rows]
 
-    ck = f"user_bd:{days}:{sort_by}:{source or ''}"
-    return _swr(ck, _compute)
+    ck = f"user_bd:{_window_key(days, minutes)}:{sort_by}:{source or ''}"
+    return _swr_window(ck, _compute, days, minutes)
 
 
 def export_user_downloads_csv(
@@ -714,57 +853,61 @@ def get_anon_download_stats(
 
     def _compute():
         where, params = _where(date_from=date_from, date_to=date_to, source=source)
+        # Distinct counts and totals come from window functions over the
+        # GROUP BYs — see get_user_download_stats.
         with _conn() as conn:
-            agg = _q1(conn,
-                f"""SELECT COUNT(*) AS total,
-                           COUNT(DISTINCT ip_address) AS unique_ips,
-                           COUNT(DISTINCT filepath) AS unique_files,
-                           COALESCE(SUM(bytes), 0) AS total_bytes
-                    FROM anon_downloads{where}""", params)
             top_files = _q(conn,
                 f"""SELECT filepath, filename,
                            COUNT(*) AS downloads,
-                           COALESCE(SUM(bytes), 0) AS bytes
+                           COALESCE(SUM(bytes), 0) AS bytes,
+                           COUNT(*) OVER () AS n_groups
                     FROM anon_downloads{where}
                     GROUP BY filepath, filename
                     ORDER BY {sort_files_by} DESC LIMIT 10""", params)
             top_ips = _q(conn,
                 f"""SELECT HOST(ip_address) AS ip_address,
                            COUNT(*) AS downloads,
-                           COALESCE(SUM(bytes), 0) AS bytes
+                           COALESCE(SUM(bytes), 0) AS bytes,
+                           COUNT(*) OVER () AS n_groups,
+                           SUM(COUNT(*)) OVER () AS total,
+                           SUM(COALESCE(SUM(bytes), 0)) OVER () AS total_bytes
                     FROM anon_downloads{where}
                     GROUP BY ip_address ORDER BY downloads DESC LIMIT 10""", params)
         return {
-            "total": agg["total"], "unique_ips": agg["unique_ips"],
-            "unique_files": agg["unique_files"],
-            "total_bytes": agg["total_bytes"],
-            "top_files": [dict(r) for r in top_files],
-            "top_ips":   [dict(r) for r in top_ips],
+            "total": _window_val(top_ips, "total"),
+            "unique_ips": _window_val(top_ips, "n_groups"),
+            "unique_files": _window_val(top_files, "n_groups"),
+            "total_bytes": _window_val(top_ips, "total_bytes"),
+            "top_files": _strip_window(top_files),
+            "top_ips":   _strip_window(top_ips),
         }
 
     if date_from or date_to:
         return _compute()
     ck = f"anon_stats:{source or ''}:{sort_files_by}"
-    return _swr(ck, _compute)
+    return _swr(ck, _compute, _TTL_ALL_TIME)
 
 
-def get_anon_download_timeline(days: int = 30, bucket: str = "day", source: Optional[str] = None) -> list:
+def get_anon_download_timeline(days: int = 30, bucket: str = "day", source: Optional[str] = None,
+                               minutes: Optional[int] = None) -> list:
     bucket = bucket if bucket in ("hour", "day", "week") else "day"
+    span = minutes or days * 1440
 
     def _compute():
         anon_from = _anon_downloads_sql(source)
+        bucket_expr, bucket_arg = _bucket_sql(bucket, minutes)
         with _conn() as conn:
             rows = _q(conn,
-                f"""SELECT date_trunc(%s, logged_at) AS bucket,
+                f"""SELECT {bucket_expr} AS bucket,
                            COUNT(*) AS downloads, COALESCE(SUM(bytes), 0) AS bytes
                     FROM {anon_from}
-                    WHERE logged_at >= NOW() - (%s * INTERVAL '1 day')
+                    WHERE logged_at >= NOW() - (%s * INTERVAL '1 minute')
                     GROUP BY bucket ORDER BY bucket ASC""",
-                [bucket, days])
+                [bucket_arg, span])
         return [_ser(r) for r in rows]
 
-    ck = f"anon_tl:{days}:{bucket}:{source or ''}"
-    return _swr(ck, _compute)
+    ck = f"anon_tl:{_window_key(days, minutes)}:{bucket}:{source or ''}"
+    return _swr_window(ck, _compute, days, minutes)
 
 
 def export_anon_downloads_csv(
@@ -867,7 +1010,7 @@ def get_user_upload_stats(
     if date_from or date_to:
         return _compute()
     ck = f"user_upload_stats:{sort_files_by}:{sort_users_by}"
-    return _swr(ck, _compute)
+    return _swr(ck, _compute, _TTL_SHORT)
 
 
 def get_upload_timeline(days: int = 30, bucket: str = "day") -> list:
@@ -885,7 +1028,7 @@ def get_upload_timeline(days: int = 30, bucket: str = "day") -> list:
         return [_ser(r) for r in rows]
 
     ck = f"upload_tl:{days}:{bucket}"
-    return _swr(ck, _compute)
+    return _swr(ck, _compute, _TTL_SHORT)
 
 
 def export_user_uploads_csv(
@@ -978,7 +1121,7 @@ def get_anon_upload_stats(
     if date_from or date_to:
         return _compute()
     ck = f"anon_upload_stats:{sort_files_by}"
-    return _swr(ck, _compute)
+    return _swr(ck, _compute, _TTL_SHORT)
 
 
 def export_anon_uploads_csv(
@@ -1025,45 +1168,47 @@ def get_earliest_activity(source: Optional[str] = None) -> dict:
         return {"earliest": earliest.isoformat(), "days": max(days, 1)}
 
     ck = f"earliest:{source or ''}"
-    return _swr(ck, _compute)
+    return _swr(ck, _compute, _TTL_ALL_TIME)
 
 
 # ── Combined summary ──────────────────────────────────────────────────────────
 
-def get_summary(days: int = 30, source: Optional[str] = None) -> dict:
+def get_summary(days: int = 30, source: Optional[str] = None, minutes: Optional[int] = None) -> dict:
+    span = minutes or days * 1440
+
     def _compute():
         reg_from  = _registered_downloads_sql(source)
         anon_from = _anon_downloads_sql(source)
 
         # 8 subqueries in order: user_dl_cur, user_dl_prev, user_bytes_cur, user_bytes_prev,
         #                        anon_dl_cur,  anon_dl_prev,  anon_bytes_cur,  anon_bytes_prev
-        p_c = [days]
-        p_p = [days * 2, days]
+        p_c = [span]
+        p_p = [span * 2, span]
         summary_params = p_c + p_p + p_c + p_p + p_c + p_p + p_c + p_p
 
         with _conn() as conn:
             cur = _q1(conn, f"""
                 SELECT
                   (SELECT COUNT(*) FROM {reg_from}
-                   AND logged_at >= NOW() - (%s * INTERVAL '1 day')) AS user_dl_cur,
+                   AND logged_at >= NOW() - (%s * INTERVAL '1 minute')) AS user_dl_cur,
                   (SELECT COUNT(*) FROM {reg_from}
-                   AND logged_at >= NOW() - (%s * INTERVAL '1 day')
-                   AND logged_at <  NOW() - (%s * INTERVAL '1 day')) AS user_dl_prev,
+                   AND logged_at >= NOW() - (%s * INTERVAL '1 minute')
+                   AND logged_at <  NOW() - (%s * INTERVAL '1 minute')) AS user_dl_prev,
                   (SELECT COALESCE(SUM(bytes),0) FROM {reg_from}
-                   AND logged_at >= NOW() - (%s * INTERVAL '1 day')) AS user_bytes_cur,
+                   AND logged_at >= NOW() - (%s * INTERVAL '1 minute')) AS user_bytes_cur,
                   (SELECT COALESCE(SUM(bytes),0) FROM {reg_from}
-                   AND logged_at >= NOW() - (%s * INTERVAL '1 day')
-                   AND logged_at <  NOW() - (%s * INTERVAL '1 day')) AS user_bytes_prev,
+                   AND logged_at >= NOW() - (%s * INTERVAL '1 minute')
+                   AND logged_at <  NOW() - (%s * INTERVAL '1 minute')) AS user_bytes_prev,
                   (SELECT COUNT(*) FROM {anon_from}
-                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 day')) AS anon_dl_cur,
+                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 minute')) AS anon_dl_cur,
                   (SELECT COUNT(*) FROM {anon_from}
-                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 day')
-                     AND logged_at <  NOW() - (%s * INTERVAL '1 day')) AS anon_dl_prev,
+                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 minute')
+                     AND logged_at <  NOW() - (%s * INTERVAL '1 minute')) AS anon_dl_prev,
                   (SELECT COALESCE(SUM(bytes),0) FROM {anon_from}
-                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 day')) AS anon_bytes_cur,
+                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 minute')) AS anon_bytes_cur,
                   (SELECT COALESCE(SUM(bytes),0) FROM {anon_from}
-                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 day')
-                     AND logged_at <  NOW() - (%s * INTERVAL '1 day')) AS anon_bytes_prev
+                   WHERE logged_at >= NOW() - (%s * INTERVAL '1 minute')
+                     AND logged_at <  NOW() - (%s * INTERVAL '1 minute')) AS anon_bytes_prev
             """, summary_params)
             timeline = _q(conn, f"""
                 SELECT bucket,
@@ -1075,18 +1220,18 @@ def get_summary(days: int = 30, source: Optional[str] = None) -> dict:
                            COUNT(*) AS user_dl, 0 AS anon_dl,
                            COALESCE(SUM(bytes), 0) AS total_bytes
                     FROM {reg_from}
-                    AND logged_at >= NOW() - (%s * INTERVAL '1 day')
+                    AND logged_at >= NOW() - (%s * INTERVAL '1 minute')
                     GROUP BY bucket
                     UNION ALL
                     SELECT date_trunc('day', logged_at) AS bucket,
                            0 AS user_dl, COUNT(*) AS anon_dl,
                            COALESCE(SUM(bytes), 0) AS total_bytes
                     FROM {anon_from}
-                    WHERE logged_at >= NOW() - (%s * INTERVAL '1 day')
+                    WHERE logged_at >= NOW() - (%s * INTERVAL '1 minute')
                     GROUP BY bucket
                 ) sub
                 GROUP BY bucket ORDER BY bucket ASC
-            """, [days, days])
+            """, [span, span])
 
         def pct(c, p):
             return round(((c - p) / p) * 100, 1) if p else None
@@ -1100,5 +1245,231 @@ def get_summary(days: int = 30, source: Optional[str] = None) -> dict:
             "timeline": [_ser(r) for r in timeline],
         }
 
-    ck = f"summary:{days}:{source or ''}"
-    return _swr(ck, _compute)
+    ck = f"summary:{_window_key(days, minutes)}:{source or ''}"
+    return _swr_window(ck, _compute, days, minutes)
+
+
+# ── Activity heatmap (day-of-week × hour-of-day) ──────────────────────────────
+# All downloads for one source (registered + anonymous — no split, so the
+# _registered/_anon helpers aren't needed), folded into a 7×24 grid in the
+# viewer's timezone for any range (presets or a custom start/end).
+#
+# One cached, timezone-independent scan per source: every UTC hour bucket
+# (epoch hours) of all history, plus the hour it was computed. Requests slice
+# that series in Python, so arbitrary ranges cost nothing extra, and top it up
+# with a live query (micro-cached) for hours since the scan, so recent hours
+# are never stale even though the full scan (~20s for HTTP) refreshes rarely.
+
+_HEAT_TTL = 6 * 3600
+_HEAT_TAIL_TTL = 60
+
+_HEAT_SQL = """
+    SELECT h, SUM(n) AS n, SUM(b) AS b FROM (
+        SELECT floor(extract(epoch FROM logged_at) / 3600)::bigint AS h,
+               COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b
+        FROM user_downloads WHERE source = %s {cond}
+        GROUP BY h
+        UNION ALL
+        SELECT floor(extract(epoch FROM logged_at) / 3600)::bigint AS h,
+               COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b
+        FROM anon_downloads WHERE source = %s {cond}
+        GROUP BY h
+    ) s GROUP BY h ORDER BY h
+"""
+
+
+def _heat_rows(source: str, since_h: Optional[int] = None) -> list:
+    cond, extra = "", []
+    if since_h is not None:
+        cond, extra = "AND logged_at >= to_timestamp(%s)", [since_h * 3600]
+    with _conn() as conn:
+        rows = _q(conn, _HEAT_SQL.format(cond=cond), [source, *extra, source, *extra])
+    return [[int(r["h"]), int(r["n"]), int(r["b"])] for r in rows]
+
+
+def _heat_series_all(source: str) -> dict:
+    def _compute():
+        computed_h = int(datetime.now(timezone.utc).timestamp() // 3600)
+        return {"computed_h": computed_h, "rows": _heat_rows(source)}
+    return _swr(f"heat_all:{source}", _compute, _HEAT_TTL)
+
+
+def _heat_series(source: str) -> dict[int, tuple[int, int]]:
+    """{epoch_hour: (downloads, bytes)} for all history, current to the minute."""
+    base = _heat_series_all(source)
+    cut = int(base["computed_h"])
+    tail = _cached_fresh(f"heat_tail:{source}:{cut}", lambda: _heat_rows(source, cut), _HEAT_TAIL_TTL)
+    series = {h: (n, b) for h, n, b in base["rows"] if h < cut}
+    series.update({h: (n, b) for h, n, b in tail})
+    return series
+
+
+@functools.lru_cache(maxsize=1)
+def _known_zones() -> frozenset:
+    from zoneinfo import available_timezones  # scans the tzdata tree; once
+    return frozenset(available_timezones())
+
+
+def _zone(tz: Optional[str]):
+    from zoneinfo import ZoneInfo
+    if tz and tz in _known_zones():
+        try:
+            return tz, ZoneInfo(tz)
+        except Exception:
+            pass
+    return "UTC", timezone.utc
+
+
+def get_activity_heatmap(source: str, tz: Optional[str] = None, days: Optional[int] = None,
+                         start: Optional[datetime] = None, end: Optional[datetime] = None) -> dict:
+    """Downloads and bytes per (weekday, hour) in `tz`; rows are Monday..Sunday.
+
+    Range: `start`/`end` (custom; `end` defaults to now), else the last `days`,
+    else all history. Whole hours: an hour is included if the range touches it.
+    `slots[d][h]` is how many times that weekday/hour occurred in the range
+    (from the first hour with data, if later) — the frontend divides by it for
+    a per-hour average, so cells stay comparable whatever the range.
+    """
+    tz_name, zone = _zone(tz)
+    series = _heat_series(source)
+    now_h = int(datetime.now(timezone.utc).timestamp() // 3600)
+    first_h = min(series) if series else now_h
+
+    def _ts(dt: datetime) -> float:
+        return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).timestamp()
+
+    end_h = now_h if end is None else min(now_h, -int(-_ts(end) // 3600) - 1)  # ceil - 1
+    if start is not None:
+        start_h = int(_ts(start) // 3600)
+    elif days:
+        start_h = end_h - days * 24 + 1
+    else:
+        start_h = first_h
+    start_h = max(start_h, first_h)
+
+    count = [[0] * 24 for _ in range(7)]
+    nbytes = [[0] * 24 for _ in range(7)]
+    slots = [[0] * 24 for _ in range(7)]
+    for h in range(start_h, end_h + 1):
+        lt = datetime.fromtimestamp(h * 3600, zone)
+        d, hr = lt.weekday(), lt.hour
+        slots[d][hr] += 1
+        v = series.get(h)
+        if v:
+            count[d][hr] += v[0]
+            nbytes[d][hr] += v[1]
+
+    def _iso(h: int) -> str:
+        return datetime.fromtimestamp(h * 3600, timezone.utc).isoformat()
+
+    return {
+        "source": source, "tz": tz_name,
+        "start": _iso(start_h) if end_h >= start_h else None,
+        "end": _iso(end_h + 1) if end_h >= start_h else None,
+        "first_data": _iso(first_h) if series else None,
+        "count": count, "bytes": nbytes, "slots": slots,
+        "total": sum(map(sum, count)), "total_bytes": sum(map(sum, nbytes)),
+    }
+
+
+# ── R/W activity log (trusted + private FTP users) ────────────────────────────
+# Rows are written by the logtailer (ftp_activity) for the usernames the backend
+# publishes into ftp_activity_users on every sync(). Kept indefinitely — the
+# retention pruner only touches the download tables.
+
+ACTIVITY_ACTIONS = ("upload", "download", "delete", "mkdir", "rmdir", "rename", "chmod", "login")
+
+
+def set_activity_users(users: list[tuple[str, str]]) -> None:
+    """Replace the tracked-user list: [(username, 'trusted'|'private'), ...]."""
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ftp_activity_users (
+                    username   TEXT PRIMARY KEY,
+                    user_class TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )""")
+            cur.execute("DELETE FROM ftp_activity_users")
+            if users:
+                psycopg2.extras.execute_values(
+                    cur, "INSERT INTO ftp_activity_users (username, user_class) VALUES %s", users)
+        conn.commit()
+
+
+def _activity_where(username=None, user_class=None, action=None, ip=None, path=None,
+                    result=None, date_from=None, date_to=None) -> tuple[str, list]:
+    clauses, params = [], []
+    if username:
+        clauses.append("username = %s"); params.append(username)
+    if user_class in ("trusted", "private"):
+        clauses.append("user_class = %s"); params.append(user_class)
+    if action:
+        acts = [a for a in action.split(",") if a in ACTIVITY_ACTIONS]
+        if acts:
+            clauses.append("action = ANY(%s)"); params.append(acts)
+    if ip:
+        clauses.append("HOST(ip_address) ILIKE %s"); params.append(f"%{ip}%")
+    if path:
+        clauses.append("(path ILIKE %s OR path_from ILIKE %s)"); params += [f"%{path}%", f"%{path}%"]
+    if result == "ok":
+        clauses.append("success")
+    elif result == "fail":
+        clauses.append("NOT success")
+    if date_from:
+        clauses.append("logged_at >= %s"); params.append(date_from)
+    if date_to:
+        clauses.append("logged_at <= %s"); params.append(date_to)
+    return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
+
+
+def get_activity(page: int = 1, limit: int = 100, **filters) -> dict:
+    where, params = _activity_where(**filters)
+    with _conn() as conn:
+        total = _q1(conn, f"SELECT COUNT(*) AS n FROM ftp_activity{where}", params)["n"]
+        rows = _q(conn, f"""
+            SELECT id, logged_at, HOST(ip_address) AS ip_address, username, user_class, action,
+                   command, path, path_from, status, success, bytes
+            FROM ftp_activity{where}
+            ORDER BY logged_at DESC, id DESC LIMIT %s OFFSET %s""",
+            params + [limit, (page - 1) * limit])
+    return {"total": total, "page": page, "limit": limit, "rows": [_ser(r) for r in rows]}
+
+
+def get_activity_summary(days: int = 30, user_class: Optional[str] = None) -> list:
+    where, params = _activity_where(user_class=user_class)
+    where += (" AND " if where else " WHERE ") + "logged_at >= NOW() - (%s * INTERVAL '1 day')"
+    params.append(days)
+    sums = ", ".join(f"COUNT(*) FILTER (WHERE action='{a}' AND success) AS {a}" for a in ACTIVITY_ACTIONS)
+    with _conn() as conn:
+        rows = _q(conn, f"""
+            SELECT username, MAX(user_class) AS user_class, {sums},
+                   COUNT(*) FILTER (WHERE NOT success) AS failed,
+                   COALESCE(SUM(bytes) FILTER (WHERE action='upload' AND success), 0) AS bytes_up,
+                   COALESCE(SUM(bytes) FILTER (WHERE action='download' AND success), 0) AS bytes_down,
+                   MAX(logged_at) AS last_seen, COUNT(DISTINCT HOST(ip_address)) AS ips
+            FROM ftp_activity{where}
+            GROUP BY username ORDER BY MAX(logged_at) DESC""", params)
+    return [_json_safe(_ser(r)) for r in rows]
+
+
+def export_activity_csv(**filters) -> str:
+    where, params = _activity_where(**filters)
+    with _conn() as conn:
+        rows = _q(conn, f"""
+            SELECT logged_at AT TIME ZONE 'UTC' AS logged_at, HOST(ip_address) AS ip_address,
+                   username, user_class, action, command, path, path_from, status, success, bytes
+            FROM ftp_activity{where} ORDER BY logged_at DESC, id DESC LIMIT 500000""", params)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    cols = ["logged_at", "ip_address", "username", "user_class", "action", "command",
+            "path", "path_from", "status", "success", "bytes"]
+    w.writerow(["timestamp_utc"] + cols[1:])
+    for r in rows:
+        w.writerow([r[c] for c in cols])
+    return buf.getvalue()
+
+
+def get_activity_backfill_status() -> dict:
+    return {"done": (get_tailer_config("activity_backfill_done") or "false") == "true",
+            "progress": get_tailer_config("activity_backfill_progress") or "0%"}

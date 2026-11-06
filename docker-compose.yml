@@ -26,6 +26,21 @@ services:
     image: postgres:16-alpine
     container_name: ciosuseradd_db_logs
     restart: unless-stopped
+    # Stock postgres defaults (128MB shared_buffers, 4MB work_mem) make the
+    # multi-million-row stats aggregates re-read the table from the OS cache
+    # and spill sorts/hashes to temp files. Docker's default 64MB /dev/shm is
+    # too small for parallel-query shared memory.
+    shm_size: ${LOGS_PG_SHM_SIZE:-1g}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${LOGS_PG_SHARED_BUFFERS:-1GB}
+      - -c
+      - effective_cache_size=${LOGS_PG_EFFECTIVE_CACHE_SIZE:-4GB}
+      - -c
+      - work_mem=${LOGS_PG_WORK_MEM:-64MB}
+      - -c
+      - maintenance_work_mem=${LOGS_PG_MAINTENANCE_WORK_MEM:-256MB}
     environment:
       POSTGRES_DB:       ${LOGS_POSTGRES_DB}
       POSTGRES_USER:     ${LOGS_POSTGRES_USER}
@@ -60,15 +75,23 @@ services:
       FTP_UID:                 ${FTP_UID}
       FTP_GID:                 ${FTP_GID}
       TRUSTED_FTP_GID:         ${TRUSTED_FTP_GID}
+      FTPD_PRIVATE_CONF_PATH:  /ftpshared/ftpd_private.conf
+      PRIVATE_FTP_BASE_PATH:   ${PRIVATE_FTP_BASE_PATH:-/srv/private_ftp}
+      PRIVATE_FTP_GID:         ${PRIVATE_FTP_GID}
+      PRIVATE_FTP_GROUP:       ${PRIVATE_FTP_GROUP:-privateftp}
       ALLOWED_ORIGINS_STR:     ${ALLOWED_ORIGINS}
       SITE_NAME:               ${SITE_NAME:-FTP User Manager}
       FTP_PUBLIC_HOST:         ${FTP_PUBLIC_HOST:-}
       PUBLIC_HTTP_USERNAME:    ${PUBLIC_HTTP_USERNAME:-public}
+      WRONG_PORTAL_NAME:       ${WRONG_PORTAL_NAME:-}
+      WRONG_PORTAL_URL:        ${WRONG_PORTAL_URL:-}
     volumes:
       - ftpshared:/ftpshared              # ProFTPd virtual user passwd file
       - httpshared:/httpshared            # nginx .htpasswd file
       - ${FTP_BASE_PATH:-/srv/ftp}:/ftpbase  # fix-permissions endpoint
+      - ${PRIVATE_FTP_BASE_PATH:-/srv/private_ftp}:/privateftp  # private user home folders (created by backend)
       - ${FTPWHO_DIR:-/var/lib/ciosuseradd/ftpwho}:/ftpwho:ro  # host ftpwho exporter snapshot
+      - ${FTPBAN_DIR:-/var/lib/ciosuseradd/ftpban}:/ftpban     # host ftpban daemon DB (read + write)
     depends_on:
       db:
         condition: service_healthy

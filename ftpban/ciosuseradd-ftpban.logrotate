@@ -1,0 +1,12 @@
+# ProFTPd keeps these open; copytruncate avoids a proftpd restart.
+# ciosuseradd-ftpban detects the truncation and keeps reading.
+/var/log/proftpd-ciosban/session.log
+{
+	daily
+	rotate 7
+	missingok
+	notifempty
+	compress
+	delaycompress
+	copytruncate
+}

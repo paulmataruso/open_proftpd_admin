@@ -18,6 +18,13 @@ with a 'source' column set to 'ftp' or 'http'.
 
 username == 'anonftp' (FTP) or '-' (HTTP anon) → anon_downloads
 any other real username                         → user_downloads
+
+R/W activity log (ftp_activity): for usernames listed in ftp_activity_users
+(trusted + private FTP users, published by the backend on every sync) every
+file-management command is also recorded — upload, download, delete, mkdir,
+rmdir, rename (RNFR+RNTO paired), chmod, login — successful or not. A one-time
+background backfill reads the existing FTP log for those users
+(tailer_config.activity_backfill_done); a unique index dedupes overlap.
 """
 
 import bz2
@@ -72,32 +79,24 @@ MONTHS = {
 
 
 def parse_ftp_timestamp(ts_field: str) -> datetime:
-    m = FTP_TS_RE.match(ts_field)
-    if m:
-        try:
-            raw = m.group(1)
-            day, rest    = raw.split("/", 1)
-            mon_str, rest2 = rest.split("/", 1)
-            year, time_part = rest2.split(":", 1)
-            h, mi, s = time_part.split(":")
-            return datetime(
-                int(year), MONTHS[mon_str], int(day),
-                int(h), int(mi), int(s), tzinfo=timezone.utc,
-            )
-        except Exception:
-            pass
-    return datetime.now(timezone.utc)
+    """[11/Oct/2026:17:17:02 -0400] -> aware datetime, honouring ProFTPd's offset.
+
+    Before 2026-10-12 the offset was dropped and local time stored as UTC; rows
+    from then were migrated once (tailer_config.tz_migration_done)."""
+    try:
+        return datetime.strptime(ts_field.strip().strip("[]"), "%d/%b/%Y:%H:%M:%S %z")
+    except Exception:
+        return datetime.now(timezone.utc)
 
 
 def parse_http_timestamp(ts_field: str) -> datetime:
-    """Parse nginx $time_iso8601: 2026-05-12T18:04:13+00:00"""
+    """Parse nginx $time_iso8601 (2026-10-12T00:57:13-04:00), honouring the offset.
+
+    Before 2026-10-12 the offset was overwritten with UTC (local time stored as
+    UTC); rows from then were migrated once (tailer_config.tz_migration_done)."""
     try:
-        # normalize +00:00 → +0000 for fromisoformat compat
-        ts = ts_field.replace("+00:00", "+0000").replace("-00:00", "+0000")
-        # Python 3.11+ handles this natively; for 3.10 strip offset and treat as UTC
-        if ts.endswith("+0000"):
-            ts = ts[:-5]
-        return datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(ts_field.strip())
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     except Exception:
         return datetime.now(timezone.utc)
 
@@ -252,6 +251,39 @@ def ensure_schema():
             ]:
                 cur.execute(idx_sql)
             cur.execute("""
+                CREATE TABLE IF NOT EXISTS ftp_activity (
+                    id         BIGSERIAL PRIMARY KEY,
+                    logged_at  TIMESTAMPTZ NOT NULL,
+                    ip_address INET NOT NULL,
+                    username   TEXT NOT NULL,
+                    user_class TEXT NOT NULL,          -- trusted | private (at time of logging)
+                    action     TEXT NOT NULL,          -- upload|download|delete|mkdir|rmdir|rename|chmod|login
+                    command    TEXT NOT NULL,          -- raw FTP command
+                    path       TEXT,
+                    path_from  TEXT,                   -- rename source
+                    status     TEXT,                   -- FTP reply code
+                    success    BOOLEAN NOT NULL,
+                    bytes      BIGINT
+                )""")
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ftp_activity_users (
+                    username   TEXT PRIMARY KEY,
+                    user_class TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )""")
+            for idx_sql in [
+                "CREATE INDEX IF NOT EXISTS idx_fa_logged_at ON ftp_activity(logged_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_fa_user_time ON ftp_activity(username, logged_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_fa_action    ON ftp_activity(action, logged_at DESC)",
+                # Dedupe for backfill/live overlap and restarts
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_fa_event ON ftp_activity "
+                "(username, logged_at, command, status, ip_address, md5(COALESCE(path,'') || '|' || COALESCE(path_from,'')))",
+            ]:
+                cur.execute(idx_sql)
+            cur.execute(
+                "INSERT INTO tailer_config (key,value) VALUES ('activity_backfill_done','false') "
+                "ON CONFLICT (key) DO NOTHING")
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS stats_cache (
                     cache_key   TEXT PRIMARY KEY,
                     data        JSONB NOT NULL,
@@ -315,6 +347,8 @@ _TABLE_COLUMNS = {
     "anon_downloads": ("logged_at", "ip_address", "filepath", "filename", "bytes", "source"),
     "user_uploads":   ("logged_at", "ip_address", "username", "filepath", "filename", "bytes", "source"),
     "anon_uploads":   ("logged_at", "ip_address", "filepath", "filename", "bytes", "source"),
+    "ftp_activity":   ("logged_at", "ip_address", "username", "user_class", "action", "command",
+                       "path", "path_from", "status", "success", "bytes"),
 }
 
 
@@ -378,6 +412,145 @@ def parse_ftp_line(line: str) -> tuple | None:
     else:
         row["username"] = user
         return (user_table, row)
+
+
+# ── R/W activity (trusted + private users) ───────────────────────────────────
+
+_ACTIVITY_ACTIONS = {
+    "STOR": "upload", "APPE": "upload", "STOU": "upload",
+    "RETR": "download",
+    "DELE": "delete",
+    "MKD": "mkdir", "XMKD": "mkdir",
+    "RMD": "rmdir", "XRMD": "rmdir",
+    "RNTO": "rename",
+    "SITE_CHMOD": "chmod",
+    "PASS": "login",
+}
+_activity_users: dict = {}      # username -> class, refreshed from ftp_activity_users
+_activity_users_at = 0.0
+_live_rename_state: dict = {}   # (user, ip) -> RNFR path, for the live tail
+
+
+def load_activity_users() -> dict:
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT username, user_class FROM ftp_activity_users")
+            # The pool may hand out dict-row cursors — index by name, not position.
+            return {r["username"] if isinstance(r, dict) else r[0]:
+                    r["user_class"] if isinstance(r, dict) else r[1] for r in cur.fetchall()}
+    finally:
+        put_conn(conn)
+
+
+def _tracked_users() -> dict:
+    global _activity_users, _activity_users_at
+    now = time.monotonic()
+    if now - _activity_users_at >= CONFIG_POLL_INTERVAL:
+        _activity_users_at = now
+        try:
+            _activity_users = load_activity_users()
+        except Exception as e:
+            log.warning("Could not refresh activity users: %s", e)
+    return _activity_users
+
+
+def parse_activity_line(line: str, users: dict, rename_state: dict):
+    """Return an ftp_activity row for a tracked user's file-management command, else None."""
+    parts = line.rstrip("\n\r").split("|")
+    if len(parts) != 7:
+        return None
+    ts_field, ip, user, path, command, status, raw_bytes = parts
+    cls = users.get(user)
+    if not cls:
+        return None
+    path = None if path in ("", "-") else path
+    if command == "RNFR":
+        if status == "350":
+            rename_state[(user, ip)] = path
+            return None
+        action, path_from, path = "rename", path, None   # failed RNFR: record the failed rename
+    elif command in _ACTIVITY_ACTIONS:
+        action = _ACTIVITY_ACTIONS[command]
+        path_from = rename_state.pop((user, ip), None) if command == "RNTO" else None
+    else:
+        return None
+    try:
+        logged_at = datetime.strptime(ts_field.strip().strip("[]"), "%d/%b/%Y:%H:%M:%S %z")
+    except Exception:
+        return None
+    return ("ftp_activity", {
+        "logged_at": logged_at, "ip_address": ip if ip and ip != "-" else "0.0.0.0",
+        "username": user, "user_class": cls, "action": action, "command": command,
+        "path": path, "path_from": path_from, "status": status if status != "-" else None,
+        "success": status.startswith("2"),
+        "bytes": int(raw_bytes) if action in ("upload", "download") and raw_bytes.isdigit() else None,
+    })
+
+
+def parse_ftp_all(line: str):
+    """Live FTP parser: download/upload row (existing tables) + R/W activity row."""
+    out = []
+    r = parse_ftp_line(line)
+    if r:
+        out.append(r)
+    a = parse_activity_line(line, _tracked_users(), _live_rename_state)
+    if a:
+        out.append(a)
+    return out or None
+
+
+def _as_list(result):
+    if result is None:
+        return []
+    return result if isinstance(result, list) else [result]
+
+
+def backfill_activity():
+    """One-time scan of the current FTP log for tracked users' historical activity.
+    Runs in a background thread (the log can be many GB) and waits until the
+    backend has published the tracked-user list."""
+    if read_config("activity_backfill_done", "false").lower() in ("true", "1"):
+        return
+    while True:
+        users = load_activity_users()
+        if users:
+            break
+        log.info("Activity backfill: waiting for the backend to publish trusted/private users…")
+        time.sleep(30)
+    filepath = os.path.join(FTP_LOG_DIR, read_config("log_filename", "full_user.log"))
+    try:
+        size = os.path.getsize(filepath)
+    except OSError as e:
+        log.warning("Activity backfill: %s — will retry on next restart", e)
+        return
+    log.info("Activity backfill: scanning %s (%.1f GB) for %d users…", filepath, size / 1e9, len(users))
+    needles = tuple(f"|{u}|" for u in users)
+    rows, total, state, last_report = [], 0, {}, time.monotonic()
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if not any(n in line for n in needles):
+                    continue
+                r = parse_activity_line(line, users, state)
+                if r:
+                    rows.append(r[1])
+                if len(rows) >= BATCH_SIZE * 10:
+                    commit_rows({"ftp_activity": rows})
+                    total += len(rows)
+                    rows = []
+                if time.monotonic() - last_report > 60:
+                    last_report = time.monotonic()
+                    pct = 100 * f.buffer.tell() / size if size else 100
+                    write_config({"activity_backfill_progress": f"{pct:.0f}%"})
+                    log.info("Activity backfill: %.0f%% (%d rows so far)", pct, total)
+        if rows:
+            commit_rows({"ftp_activity": rows})
+            total += len(rows)
+        write_config({"activity_backfill_done": "true", "activity_backfill_progress": "100%"})
+        log.info("Activity backfill complete: %d rows", total)
+    except Exception as e:
+        log.error("Activity backfill failed: %s — will retry on next restart", e)
 
 
 # ── HTTP line parser ──────────────────────────────────────────────────────────
@@ -600,11 +773,8 @@ def ingest_archives(log_dir: str, source: str, parser_fn, logger):
 
         try:
             for line in _archive_lines(filepath):
-                result = parser_fn(line)
-                if result is None:
-                    continue
-                table, row = result
-                rows_by_table.setdefault(table, []).append(row)
+                for table, row in _as_list(parser_fn(line)):
+                    rows_by_table.setdefault(table, []).append(row)
 
                 if sum(len(v) for v in rows_by_table.values()) >= BATCH_SIZE * 10:
                     commit_rows(rows_by_table)
@@ -766,11 +936,8 @@ def tail_loop(
             if not line:
                 break
             lines_read += 1
-            result = parser_fn(line)
-            if result is None:
-                continue
-            table, row = result
-            rows_by_table.setdefault(table, []).append(row)
+            for table, row in _as_list(parser_fn(line)):
+                rows_by_table.setdefault(table, []).append(row)
 
         batch_total = sum(len(v) for v in rows_by_table.values())
         if batch_total == 0:
@@ -855,6 +1022,9 @@ if __name__ == "__main__":
     http_thread.start()
     log.info("HTTP tailer thread started")
 
+    # One-time R/W activity backfill (can take a while on a multi-GB log) — background
+    threading.Thread(target=backfill_activity, daemon=True, name="activity-backfill").start()
+
     # FTP tail runs in the main thread; always enabled independent of retention setting
     tail_loop(
         source="ftp",
@@ -863,6 +1033,6 @@ if __name__ == "__main__":
         filename_key="log_filename",
         enabled_key=None,
         pos_config_key="tailer_pos",
-        parser_fn=parse_ftp_line,
+        parser_fn=parse_ftp_all,
         status_key="tailer_status",
     )

@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <script src="/static/chart.umd.min.js"></script>
+<script src="/static/heatmap.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap');
 
@@ -58,6 +59,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .chart-wrap { position: relative; height: 220px; }
 .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
 .chart-grid .chart-card { margin-bottom: 0; }
+.chart-grid > div > .chart-card { height: 100%; }
 @media (max-width: 760px) { .chart-grid { grid-template-columns: 1fr; } }
 
 .table-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1rem; }
@@ -76,7 +78,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 .top-list .top-name  { font-family: var(--mono); font-size: 0.75rem; color: var(--text2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 0.5rem; }
 .top-list .top-count { font-family: var(--mono); color: var(--accent); flex-shrink: 0; }
 
-.range-tabs { display: flex; gap: 0.3rem; }
+.range-tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .range-tab { padding: 0.2rem 0.55rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; cursor: pointer; border: 1px solid var(--border2); background: transparent; color: var(--text3); transition: all 0.12s; }
 .range-tab.active { background: rgba(59,130,246,0.15); border-color: var(--accent); color: var(--accent-h); }
 .range-tab:hover:not(.active) { border-color: var(--text3); color: var(--text2); }
@@ -101,6 +103,21 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
   </div>
   <div class="alert info">🔒 This is a public, read-only snapshot. IP addresses are masked to their first two octets and usernames show only their first and last character.</div>
 
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem">
+    <span class="section-label">Time range: <span class="range-label">last month</span></span>
+    <div class="range-tabs">
+      <button class="range-tab" data-range="1m" onclick="setRange('1m')">1m</button>
+      <button class="range-tab" data-range="5m" onclick="setRange('5m')">5m</button>
+      <button class="range-tab" data-range="1h" onclick="setRange('1h')">1h</button>
+      <button class="range-tab" data-range="12h" onclick="setRange('12h')">12h</button>
+      <button class="range-tab" data-range="24h" onclick="setRange('24h')">24h</button>
+      <button class="range-tab" data-range="1w" onclick="setRange('1w')">1 week</button>
+      <button class="range-tab active" data-range="1mo" onclick="setRange('1mo')">1 month</button>
+      <button class="range-tab" data-range="1y" onclick="setRange('1y')">1 year</button>
+      <button class="range-tab" data-range="all" onclick="setRange('all')">All</button>
+    </div>
+  </div>
+
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
     <span class="section-label">By source</span>
   </div>
@@ -123,14 +140,6 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
 
   <div style="display:flex;align-items:center;justify-content:space-between;margin:1.25rem 0 1rem">
     <span class="section-label">Combined FTP + HTTP activity</span>
-    <div class="range-tabs">
-      <button class="range-tab" data-days="1" onclick="setRange(1)">24h</button>
-      <button class="range-tab" data-days="7" onclick="setRange(7)">7d</button>
-      <button class="range-tab active" data-days="30" onclick="setRange(30)">30d</button>
-      <button class="range-tab" data-days="90" onclick="setRange(90)">90d</button>
-      <button class="range-tab" data-days="365" onclick="setRange(365)">1y</button>
-      <button class="range-tab" data-days="max" onclick="setRange('max')">Max</button>
-    </div>
   </div>
   <div class="stats-row">
     <div class="stat-card"><div class="stat-label">Registered Users Downloads</div><div class="stat-val" id="named-dl">—</div><div class="stat-trend" id="named-dl-trend"></div></div>
@@ -139,13 +148,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
     <div class="stat-card"><div class="stat-label">Anon Data Out</div><div class="stat-val" style="font-size:1.3rem" id="anon-bytes">—</div><div class="stat-trend" id="anon-bytes-trend"></div></div>
     <div class="stat-card"><div class="stat-label">Total Downloads</div><div class="stat-val" id="total-dl">—</div><div class="stat-trend" id="total-dl-trend"></div></div>
     <div class="stat-card"><div class="stat-label">Total Data Out</div><div class="stat-val" style="font-size:1.3rem" id="total-bytes">—</div><div class="stat-trend" id="total-bytes-trend"></div></div>
-    <div class="stat-card"><div class="stat-label">Avg Downloads / Day</div><div class="stat-val" id="avg-dl">—</div></div>
-    <div class="stat-card"><div class="stat-label">Avg Data / Day</div><div class="stat-val" style="font-size:1.3rem" id="avg-bytes">—</div></div>
+    <div class="stat-card"><div class="stat-label" id="avg-dl-label">Avg Downloads / Day</div><div class="stat-val" id="avg-dl">—</div></div>
+    <div class="stat-card"><div class="stat-label" id="avg-bytes-label">Avg Data / Day</div><div class="stat-val" style="font-size:1.3rem" id="avg-bytes">—</div></div>
   </div>
 
   <div class="chart-grid">
     <div class="chart-card">
-      <h3>Downloads Over Time — Registered <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-size:0.75rem" id="range-label">last 30 days</span></h3>
+      <h3>Downloads Over Time — Registered <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-size:0.75rem" class="range-label">last month</span></h3>
       <div class="chart-wrap"><canvas id="chart-timeline-user"></canvas></div>
     </div>
     <div class="chart-card">
@@ -164,7 +173,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
     </div>
   </div>
   <div class="chart-card">
-    <h3>Top Users <span class="sort-toggle-group">
+    <h3>Top Users <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-size:0.75rem" class="range-label">last month</span> <span class="sort-toggle-group">
       <button class="sort-tab active" id="users-sort-dl" onclick="setUserSort('downloads')">By Count</button>
       <button class="sort-tab" id="users-sort-bytes" onclick="setUserSort('bytes')">By Size</button>
     </span></h3>
@@ -179,7 +188,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
     </div>
   </div>
   <div class="chart-card">
-    <h3>Top Files (by downloads)</h3>
+    <h3>Top Files (by downloads) <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-size:0.75rem" class="range-label">last month</span></h3>
     <div class="chart-wrap"><canvas id="chart-files"></canvas></div>
   </div>
   <div class="table-card">
@@ -190,9 +199,18 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); font
       </table>
     </div>
   </div>
-  <div class="detail-card"><h3>Top IPs</h3><ul class="top-list" id="top-ips"></ul></div>
+  <div class="detail-card"><h3>Top IPs <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0;font-size:0.75rem" class="range-label">last month</span></h3><ul class="top-list" id="top-ips"></ul></div>
 
-  <div class="pub-footer">Refreshes automatically every 60 seconds.</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;margin:1.5rem 0 1rem">
+    <span class="section-label">Busiest times — average downloads per hour, in your local time (own time range)</span>
+    <div id="heat-range"></div>
+  </div>
+  <div class="chart-grid">
+    <div id="heat-ftp-map"></div>
+    <div id="heat-http-map"></div>
+  </div>
+
+  <div class="pub-footer">Refreshes automatically every <span id="pub-refresh">60</span> seconds.</div>
 </div>
 
 <script>
@@ -209,12 +227,30 @@ const siteReady = fetch(API + '/public/site', { cache: 'no-store' })
     document.querySelectorAll('[data-site="name"]').forEach(el => el.textContent = SITE.site_name);
   })
   .catch(() => {});
-let pubDays = 30;
+// days/minutes: what's queried. step: timeline bucket seconds (must match
+// MINUTE_WINDOWS in backend/logs.py). refresh: seconds. avg: unit of the Avg cards.
+const RANGES = {
+  '1m':  {minutes:1,   step:5,   refresh:10, avg:'Minute', label:'last minute'},
+  '5m':  {minutes:5,   step:15,  refresh:10, avg:'Minute', label:'last 5 minutes'},
+  '1h':  {minutes:60,  step:60,  refresh:30, avg:'Minute', label:'last hour'},
+  '12h': {minutes:720, step:900, refresh:60, avg:'Hour',   label:'last 12 hours'},
+  '24h': {days:1,                refresh:60, avg:'Hour',   label:'last 24 hours'},
+  '1w':  {days:7,                refresh:60, avg:'Day',    label:'last week'},
+  '1mo': {days:30,               refresh:60, avg:'Day',    label:'last month'},
+  '1y':  {days:365,              refresh:60, avg:'Day',    label:'last year'},
+  'all': {                       refresh:60, avg:'Day',    label:'all available history'},
+};
+const AVG_UNIT_MINUTES = {Minute:1, Hour:60, Day:1440};
+let pubRange = '1mo';
+let pubSeq = 0;  // bumped on range change so slow responses for the old range are dropped
+let pubClockSkew = 0;  // server minus browser ms; short-range charts are aligned to server time
 let pubUserSort = 'downloads';
 const pubCharts = {};
 
 async function pub(path) {
   const res = await fetch(API + path, { cache: 'no-store' });
+  const serverNow = Date.parse(res.headers.get('date'));
+  if (serverNow) pubClockSkew = serverNow - Date.now();
   return { ok: res.ok, data: await res.json() };
 }
 
@@ -263,6 +299,8 @@ function stripFtpPath(p) {
 function chartOptions(yLabel) {
   return {
     responsive:true, maintainAspectRatio:false,
+    // Charts are rebuilt on every refresh; don't replay the animation every few seconds
+    ...(RANGES[pubRange].refresh < 60 ? {animation:false} : {}),
     interaction:{mode:'index',intersect:false},
     plugins:{
       legend:{position:'top',labels:{color:'#94a3b8',boxWidth:12,padding:16}},
@@ -282,6 +320,26 @@ function _freshCtx(canvasId) {
   canvas.id = canvasId;
   old.parentNode.replaceChild(canvas, old);
   return canvas.getContext('2d');
+}
+
+function _mergeShortTimelines(userTl, anonTl, range) {
+  const toKey = r => Date.parse(r.bucket) / 1000;
+  const um = {}, am = {};
+  userTl.forEach(r => { um[toKey(r)] = r; });
+  anonTl.forEach(r => { am[toKey(r)] = r; });
+
+  const last = Math.floor((Date.now() + pubClockSkew) / (range.step * 1000)) * range.step;
+  const points = [];
+  for (let i = range.minutes * 60 / range.step; i >= 0; i--) points.push(last - i * range.step);
+  const fmt = range.step < 60 ? {hour:'2-digit', minute:'2-digit', second:'2-digit'} : {hour:'2-digit', minute:'2-digit'};
+
+  return {
+    labels: points.map(p => new Date(p * 1000).toLocaleTimeString([], fmt)),
+    userDl: points.map(p => um[p]?.downloads || 0),
+    anonDl: points.map(p => am[p]?.downloads || 0),
+    userBytes: points.map(p => um[p]?.bytes || 0),
+    anonBytes: points.map(p => am[p]?.bytes || 0),
+  };
 }
 
 function _mergeTimelines(userTl, anonTl, bucket, days) {
@@ -336,39 +394,42 @@ function _renderPubLine(key, canvasId, labels, data, opts) {
 }
 
 function renderTimelineCharts(userTl, anonTl, bucket, days) {
-  const {labels,userDl,anonDl,userBytes,anonBytes} = _mergeTimelines(userTl, anonTl, bucket, days);
+  const range = RANGES[pubRange];
+  const {labels,userDl,anonDl,userBytes,anonBytes} = range.minutes
+    ? _mergeShortTimelines(userTl, anonTl, range)
+    : _mergeTimelines(userTl, anonTl, bucket, days);
   const pr = days>90?0:2;
   const toMB = b => +(b/1048576).toFixed(2);
-  const mbTick = v => v.toFixed(1)+' MB';
+  const mbTick = v => fmtBytes(v*1048576);
   _renderPubLine('tlUser','chart-timeline-user',labels,userDl,{yLabel:'Downloads',label:'Registered Users',color:'#3b82f6',bg:'rgba(59,130,246,0.12)',pointRadius:pr});
   _renderPubLine('tlAnon','chart-timeline-anon',labels,anonDl,{yLabel:'Downloads',label:'Anonymous',color:'#8b5cf6',bg:'rgba(139,92,246,0.12)',pointRadius:pr});
   _renderPubLine('bytesUser','chart-bytes-user',labels,userBytes.map(toMB),{yLabel:'MB',label:'Registered Users',color:'#3b82f6',bg:'rgba(59,130,246,0.12)',pointRadius:pr,yTickCb:mbTick});
   _renderPubLine('bytesAnon','chart-bytes-anon',labels,anonBytes.map(toMB),{yLabel:'MB',label:'Anonymous',color:'#8b5cf6',bg:'rgba(139,92,246,0.12)',pointRadius:pr,yTickCb:mbTick});
 }
 
-function renderTopFilesTable(topFiles) {
+function renderTopFilesTable(topFiles, emptyMsg = 'No data') {
   const tbody = document.getElementById('top-files-tbody');
   if (!tbody) return;
-  if (!topFiles?.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">No data</td></tr>'; return; }
+  if (!topFiles?.length) { tbody.innerHTML = `<tr><td colspan="3" class="empty">${emptyMsg}</td></tr>`; return; }
   tbody.innerHTML = topFiles.map(f => {
     const full = f.filepath || f.filename || '';
     return `<tr><td title="${esc(full)}">${esc(stripFtpPath(full))}</td><td>${fmtNum(f.downloads)}</td><td>${fmtBytes(f.bytes||0)}</td></tr>`;
   }).join('');
 }
 
-function renderTopUsersTable(breakdown) {
+function renderTopUsersTable(breakdown, emptyMsg = 'No data') {
   const tbody = document.getElementById('top-users-tbody');
   if (!tbody) return;
-  if (!breakdown?.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">No data</td></tr>'; return; }
+  if (!breakdown?.length) { tbody.innerHTML = `<tr><td colspan="3" class="empty">${emptyMsg}</td></tr>`; return; }
   tbody.innerHTML = breakdown.map(r =>
     `<tr><td>${esc(r.username)}</td><td>${fmtNum(r.downloads)}</td><td>${fmtBytes(r.bytes||0)}</td></tr>`
   ).join('');
 }
 
-function renderTopFiles(topFiles) {
-  renderTopFilesTable(topFiles);
-  if (!topFiles?.length) return;
+function renderTopFiles(topFiles, emptyMsg) {
+  renderTopFilesTable(topFiles, emptyMsg);
   if (pubCharts.files) { pubCharts.files.destroy(); pubCharts.files = null; }
+  if (!topFiles?.length) return;
   const ctx = _freshCtx('chart-files');
   if (!ctx) return;
   const labels = topFiles.slice(0,10).map(f=>{ const p=stripFtpPath(f.filepath||f.filename); return p.length>35?'…'+p.slice(-35):p; });
@@ -380,10 +441,10 @@ function renderTopFiles(topFiles) {
   });
 }
 
-function renderTopUsers(breakdown) {
-  renderTopUsersTable(breakdown);
-  if (!breakdown?.length) return;
+function renderTopUsers(breakdown, emptyMsg) {
+  renderTopUsersTable(breakdown, emptyMsg);
   if (pubCharts.users) { pubCharts.users.destroy(); pubCharts.users = null; }
+  if (!breakdown?.length) return;
   const ctx = _freshCtx('chart-users');
   if (!ctx) return;
   const isByBytes = pubUserSort==='bytes';
@@ -401,10 +462,10 @@ function renderTopUsers(breakdown) {
   });
 }
 
-function renderTopList(elId, items, nameKey, showBytes) {
+function renderTopList(elId, items, nameKey, showBytes, emptyMsg = 'No data') {
   const el = document.getElementById(elId);
   if (!el) return;
-  if (!items || !items.length) { el.innerHTML='<li style="color:var(--text3);font-size:0.8rem">No data</li>'; return; }
+  if (!items || !items.length) { el.innerHTML='<li style="color:var(--text3);font-size:0.8rem">'+emptyMsg+'</li>'; return; }
   el.innerHTML = items.map(item=>{
     const raw = item[nameKey] || '';
     const countPart = showBytes
@@ -418,6 +479,7 @@ function renderTopList(elId, items, nameKey, showBytes) {
 }
 
 let pubMaxDays = null;
+let pubRefreshTimer = null;
 
 async function loadMaxDays() {
   try {
@@ -426,16 +488,35 @@ async function loadMaxDays() {
   } catch(e) {}
 }
 
-function setRange(days) {
-  if (days === 'max') days = pubMaxDays || 3650;
-  pubDays = days;
-  document.querySelectorAll('.range-tab').forEach(t => {
-    const active = t.dataset.days === 'max' ? days === pubMaxDays : +t.dataset.days === days;
-    t.classList.toggle('active', active);
-  });
-  document.getElementById('range-label').textContent = days === pubMaxDays ? 'all available history'
-    : ({1:'last 24 hours',7:'last 7 days',30:'last 30 days',90:'last 90 days',365:'last 12 months'})[days] || `last ${days} days`;
-  loadActivity();
+function _windowQuery() {
+  const r = RANGES[pubRange];
+  return r.minutes ? `minutes=${r.minutes}` : `days=${r.days || pubMaxDays || 3650}`;
+}
+
+async function setRange(key) {
+  const seq = ++pubSeq;
+  pubRange = key;
+  const r = RANGES[key];
+  document.querySelectorAll('.range-tab[data-range]').forEach(t => t.classList.toggle('active', t.dataset.range === key));
+  document.querySelectorAll('.range-label').forEach(el => { el.textContent = r.label; });
+  document.getElementById('avg-dl-label').textContent = `Avg Downloads / ${r.avg}`;
+  document.getElementById('avg-bytes-label').textContent = `Avg Data / ${r.avg}`;
+  renderTopFiles(null, 'Loading…');
+  renderTopUsers(null, 'Loading…');
+  renderTopList('top-ips', null, 'ip_address', false, 'Loading…');
+  scheduleRefresh();
+  if (key === 'all' && !pubMaxDays) {
+    await loadMaxDays();
+    if (seq !== pubSeq) return;
+  }
+  loadWindowed();
+}
+
+function scheduleRefresh() {
+  const secs = RANGES[pubRange].refresh;
+  clearInterval(pubRefreshTimer);
+  pubRefreshTimer = setInterval(() => { if (!document.hidden) loadWindowed(); }, secs * 1000);
+  document.getElementById('pub-refresh').textContent = secs;
 }
 
 function setUserSort(sort) {
@@ -446,10 +527,13 @@ function setUserSort(sort) {
 }
 
 async function loadSourceSplit() {
+  const seq = pubSeq;
+  const q = _windowQuery();
   const [ftpRes, httpRes] = await Promise.allSettled([
-    pub(`/public/overview/summary?days=${pubDays}&source=ftp`),
-    pub(`/public/overview/summary?days=${pubDays}&source=http`),
+    pub(`/public/overview/summary?${q}&source=ftp`),
+    pub(`/public/overview/summary?${q}&source=http`),
   ]);
+  if (seq !== pubSeq) return;
   const _pct = (c, p) => p ? Math.round(((c-p)/p)*1000)/10 : null;
   const combine = (res) => {
     if (res.status !== 'fulfilled' || !res.value.ok) return null;
@@ -478,12 +562,17 @@ async function loadSnapshot() {
 }
 
 async function loadActivity() {
-  const bucket = pubDays <= 1 ? 'hour' : 'day';
+  const seq = pubSeq;
+  const range = RANGES[pubRange];
+  const q = _windowQuery();
+  const days = range.days || pubMaxDays || 3650;
+  const bucket = days <= 1 ? 'hour' : 'day';
   const [summaryRes, userTlRes, anonTlRes] = await Promise.allSettled([
-    pub(`/public/overview/summary?days=${pubDays}`),
-    pub(`/public/overview/users/timeline?days=${pubDays}&bucket=${bucket}`),
-    pub(`/public/overview/anon/timeline?days=${pubDays}&bucket=${bucket}`),
+    pub(`/public/overview/summary?${q}`),
+    pub(`/public/overview/users/timeline?${q}&bucket=${bucket}`),
+    pub(`/public/overview/anon/timeline?${q}&bucket=${bucket}`),
   ]);
+  if (seq !== pubSeq) return;
   if (summaryRes.status==='fulfilled' && summaryRes.value.ok) {
     const s = summaryRes.value.data;
     _setStatCard('named-dl',    'named-dl-trend',    s.user_downloads, false);
@@ -497,43 +586,58 @@ async function loadActivity() {
     const tbP  = (s.user_bytes.previous||0)+(s.anon_bytes.previous||0);
     _setStatCard('total-dl',    'total-dl-trend',    {current:tdlC,previous:tdlP,change:_pct(tdlC,tdlP)}, false);
     _setStatCard('total-bytes', 'total-bytes-trend', {current:tbC, previous:tbP, change:_pct(tbC,tbP)},  true);
-    _setText('avg-dl',    fmtNum(Math.round(tdlC / pubDays)));
-    _setText('avg-bytes', fmtBytes(Math.round(tbC / pubDays)));
+    const avgUnits = (range.minutes || days * 1440) / AVG_UNIT_MINUTES[range.avg];
+    _setText('avg-dl',    fmtNum(Math.round(tdlC / avgUnits)));
+    _setText('avg-bytes', fmtBytes(Math.round(tbC / avgUnits)));
   }
   if (userTlRes.status==='fulfilled' && anonTlRes.status==='fulfilled') {
     const userTl = userTlRes.value.ok ? userTlRes.value.data : [];
     const anonTl = anonTlRes.value.ok ? anonTlRes.value.data : [];
-    renderTimelineCharts(userTl, anonTl, bucket, pubDays);
+    renderTimelineCharts(userTl, anonTl, bucket, days);
   }
 }
 
 async function loadTopFilesAndIps() {
+  const seq = pubSeq;
   try {
-    const { ok, data } = await pub('/public/overview/top-stats');
-    if (!ok) return;
+    // "All" omits the window: that's the all-time key, already cached
+    const q = pubRange === 'all' ? '' : '?' + _windowQuery();
+    const { ok, data } = await pub('/public/overview/top-stats' + q);
+    if (!ok || seq !== pubSeq) return;
     renderTopFiles(data.top_files);
     renderTopList('top-ips', data.top_ips, 'ip_address', false);
   } catch(e) {}
 }
 
 async function loadTopUsers() {
+  const seq = pubSeq;
   try {
-    const { ok, data } = await pub(`/public/overview/users/breakdown?days=${pubDays}&sort_by=${pubUserSort}`);
-    if (ok) renderTopUsers(data);
+    const { ok, data } = await pub(`/public/overview/users/breakdown?${_windowQuery()}&sort_by=${pubUserSort}`);
+    if (ok && seq === pubSeq) renderTopUsers(data);
   } catch(e) {}
 }
 
-function loadAll() {
+function loadWindowed() {
   loadSourceSplit();
-  loadSnapshot();
   loadActivity();
   loadTopFilesAndIps();
   loadTopUsers();
   document.getElementById('pub-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 
-siteReady.then(() => { loadMaxDays(); loadAll(); });
-setInterval(loadAll, 60000);
+// Busiest-times heatmaps (static/heatmap.js): own range picker, independent of
+// the page's time range; aggregate counts only. Refreshed every 5 min unless a
+// custom (fixed) range is showing.
+const heatMaps = ['ftp', 'http'].map(source => HeatmapUI.createMap(document.getElementById(`heat-${source}-map`),
+  { label: source.toUpperCase(), source, path: '/public/overview/heatmap', fetchJson: pub }));
+const heatPicker = HeatmapUI.createRangePicker(document.getElementById('heat-range'),
+  { initial: '30d', onChange: (q, label) => heatMaps.forEach(m => m.load(q, label)) });
+function loadHeatmaps() { const c = heatPicker.current(); heatMaps.forEach(m => m.load(c.query, c.label)); }
+setInterval(() => { if (!document.hidden && !heatPicker.isCustom()) loadHeatmaps(); }, 300000);
+
+siteReady.then(() => { loadMaxDays(); loadSnapshot(); loadWindowed(); loadHeatmaps(); });
+scheduleRefresh();
+setInterval(loadSnapshot, 60000);
 </script>
 </body>
 </html>

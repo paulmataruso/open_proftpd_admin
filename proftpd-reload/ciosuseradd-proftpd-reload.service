@@ -1,0 +1,15 @@
+# Triggered by ciosuseradd-proftpd-reload.path — see that file for install steps.
+# Config is syntax-checked first; a bad config fails this unit (visible in
+# `systemctl status ciosuseradd-proftpd-reload`) instead of reloading.
+# `systemctl reload proftpd` is a graceful SIGHUP: active transfers are kept.
+
+[Unit]
+Description=Reload ProFTPd after ciosuseradd config change
+After=proftpd.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 1
+ExecStartPre=/usr/sbin/proftpd --configtest -c /etc/proftpd/proftpd.conf
+ExecStart=/bin/systemctl reload proftpd.service

@@ -1,0 +1,20 @@
+# Watchdog + fail-open guardrail for ciosuseradd-ftpban (see ftpban-watchdog.py).
+#
+# Install (on the ProFTPd host, as root):
+#   cp ftpban/ftpban-watchdog.py /usr/local/sbin/ciosuseradd-ftpban-watchdog
+#   chmod 755 /usr/local/sbin/ciosuseradd-ftpban-watchdog
+#   cp ftpban/ciosuseradd-ftpban-watchdog.{service,timer} /etc/systemd/system/
+#   systemctl daemon-reload && systemctl enable --now ciosuseradd-ftpban-watchdog.timer
+#
+# To take the ban system out of service on purpose:
+#   systemctl disable --now ciosuseradd-ftpban   (the watchdog then just keeps it failed open)
+
+[Unit]
+Description=ciosuseradd FTP ban watchdog (restart, else fail open)
+After=ciosuseradd-ftpban.service
+
+[Service]
+Type=oneshot
+Environment=FTPBAN_DIR=/var/lib/ciosuseradd/ftpban
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/ciosuseradd-ftpban-watchdog
+TimeoutStartSec=150

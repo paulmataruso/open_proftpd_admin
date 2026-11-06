@@ -32,6 +32,28 @@ class Settings(BaseSettings):
     ftp_base_mount: str = "/ftpbase"          # container-side mount of ftp_base_path
     ftpd_trusted_conf_path: str = "/ftpshared/ftpd_trusted.conf"
 
+    # Private FTP users — admin-provisioned R/W accounts, each chrooted to its own
+    # folder under a SEPARATE base path from trusted users. Home folders are
+    # created by the backend (mode 750) owned ftp_uid:private_ftp_gid.
+    private_ftp_base_path: str = "/srv/private_ftp"
+    private_ftp_base_mount: str = "/privateftp"   # container-side mount of private_ftp_base_path
+    ftpd_private_conf_path: str = "/ftpshared/ftpd_private.conf"
+    # Must be a dedicated host group (name + GID) used by nothing else: ProFTPd
+    # chroots members of this group to their home via `DefaultRoot ~ <group>`.
+    private_ftp_gid: int = 986
+    private_ftp_group: str = "privateftp"
+
+    @field_validator("private_ftp_group")
+    @classmethod
+    def _safe_private_group(cls, v: str) -> str:
+        # Written verbatim into ftpd_private.conf.
+        if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", v):
+            raise ValueError("PRIVATE_FTP_GROUP must be a valid Unix group name")
+        return v
+
+    # FTP ban system DB, owned by the host-side ciosuseradd-ftpban daemon
+    ftpban_db_path: str = "/ftpban/ftpban.db"
+
     # Live-sessions snapshot written by the host-side ftpwho exporter
     ftpwho_json_path: str = "/ftpwho/ftpwho.json"
 
@@ -46,6 +68,19 @@ class Settings(BaseSettings):
     # .htpasswd). Its downloads land in user_downloads but are counted as
     # anonymous everywhere — see _registered_downloads_sql() in logs.py.
     public_http_username: str = "public"
+
+    # "Wrong login page?" pointer shown on the admin login page's ban/warning
+    # messages, for visitors who meant to reach a different site. Empty = hidden.
+    wrong_portal_name: str = ""
+    wrong_portal_url: str = ""
+
+    @field_validator("wrong_portal_url")
+    @classmethod
+    def _safe_portal_url(cls, v: str) -> str:
+        v = v.strip()
+        if v and not re.fullmatch(r"https?://[^\s\"'<>]+", v):
+            raise ValueError("WRONG_PORTAL_URL must be an http(s):// URL")
+        return v
 
     @field_validator("public_http_username")
     @classmethod
